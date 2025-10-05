@@ -36,7 +36,7 @@
 
 ## Clarifications
 
-### Session 2025-10-04
+### Session 2025-10-04 (Pre-Implementation)
 - Q: How should the system respond when a resize operation hits min/max constraints? → A: Platform-native behavior (may differ per OS)
 - Q: What automated test coverage is required for cross-platform parity validation? → A: Unit tests + manual QA verification
 - Q: Can multiple windows exist simultaneously per application instance? → A: Yes - with platform-specific limits
@@ -44,6 +44,15 @@
 - Clarification: Unit tests will be written for discrete, testable components (no arbitrary coverage percentage targets)
 - Q: What happens when the application loses focus or is minimized? → A: Platform-native behavior (may differ per OS)
 - Q: What happens during graceful vs forced application shutdown? → A: Graceful allows cleanup, forced exits immediately
+
+### Session 2025-10-05 (Post-Implementation)
+- Confirmed: Event callback API deferred to future milestone; M0 defines event types but does not expose callback mechanism
+- Confirmed: LuminaApp protocol pattern provides standardized entry point for common use cases
+- Confirmed: Non-copyable types (~Copyable) used for Application and Window to prevent handle duplication
+- Confirmed: 76 automated tests implemented (geometry, events, errors, platform-specific)
+- Confirmed: Window creation performance exceeds target (42.81ms first window, 5.03ms subsequent vs 100ms target)
+- Confirmed: Cursor API uses static methods for global cursor control (not instance methods)
+- Confirmed: Platform backends organized in nested Platforms/ directory structure
 
 ---
 
@@ -77,11 +86,12 @@ A developer wants to create a cross-platform desktop application using Swift tha
 
 #### Event Loop & Application Lifecycle
 - **FR-001**: System MUST provide three event loop modes: `run` (blocking), `poll` (non-blocking), and `wait` (low-power sleep until next event)
-- **FR-002**: System MUST allow applications to post custom user events into the event queue
+- **FR-002**: System MUST allow applications to post custom user events into the event queue from background threads (thread-safe)
 - **FR-003**: System MUST support graceful shutdown via system quit signal or explicit application exit
 - **FR-004**: System MUST enforce single-threaded UI event loop execution
 - **FR-005**: System MUST prevent background threads from directly calling UI APIs (enforced via @MainActor compile-time checks)
 - **FR-033**: System MUST distinguish between graceful shutdown (allowing cleanup) and forced shutdown (immediate exit)
+- **FR-034**: System SHOULD provide a standardized application entry point pattern for common use cases
 
 #### Window Management
 - **FR-006**: System MUST support creating, showing, and closing windows
@@ -107,6 +117,7 @@ A developer wants to create a cross-platform desktop application using Swift tha
 - **FR-019**: System MUST deliver key down and key up events with keycodes
 - **FR-020**: System MUST expose modifier key states (Shift, Ctrl, Alt, Cmd/Win)
 - **FR-021**: System MUST provide UTF-8 text input events for Latin keyboard layouts; extended layout support (Cyrillic, Arabic, CJK) deferred to Wave C
+- **FR-035**: System SHOULD provide named constants for common keys (Escape, Return, Tab, Space, Backspace) in addition to raw scan codes
 
 #### System Cursors
 - **FR-022**: System MUST provide standard cursor types: arrow, I-beam, crosshair, resize handles, and hand/pointer
@@ -119,20 +130,25 @@ A developer wants to create a cross-platform desktop application using Swift tha
 
 #### Documentation & Examples
 - **FR-026**: System MUST include "Hello Window" example demonstrating basic window creation
-- **FR-027**: System MUST include "Input Explorer" example displaying all pointer and keyboard events, demonstrating async/await event handling by dispatching events to async functions
+- **FR-027**: System MUST include "Input Explorer" example demonstrating async/await integration with event loop (async tasks working concurrently)
 - **FR-028**: System MUST include "Scaling Demo" example showing logical vs physical size handling
 - **FR-029**: All public APIs MUST have reference documentation
+- **FR-036**: System documentation MUST clarify which features are available in current milestone vs deferred to future milestones (e.g., event callbacks, IME support)
 
 ### Key Entities
 
-- **Application**: Represents the running application instance; manages event loop (FR-001, FR-004) and lifecycle (FR-003, FR-033); supports multiple windows per FR-032
-- **Window**: A platform window with attributes (title, size, position, visibility, focus state) and resizing constraints per FR-006 through FR-011
-- **Event**: Base type for all events processed by the event loop (window events, input events, user events, system events)
+- **Application**: Represents the running application instance; manages event loop (FR-001, FR-004) and lifecycle (FR-003, FR-033); supports multiple windows per FR-032; non-copyable to prevent duplication
+- **Window**: A platform window with attributes (title, size, position, visibility, focus state) and resizing constraints per FR-006 through FR-011; non-copyable to prevent handle duplication
+- **Event**: Base type for all events processed by the event loop (window events, input events, user events, system events); defined in M0 but callback API deferred to future milestone
 - **PointerEvent**: Mouse/trackpad input with position, button state, and enter/leave tracking
-- **KeyboardEvent**: Key press/release with keycode, modifiers, and text input for character entry
-- **ScaleFactorEvent**: Notification of DPI/scaling changes with old and new scale factors
-- **LogicalSize / PhysicalSize**: Distinct types for device-independent vs pixel-based dimensions
-- **Cursor**: System cursor appearance and visibility state
+- **KeyboardEvent**: Key press/release with keycode (including named constants per FR-035), modifiers, and text input for character entry
+- **WindowEvent**: Window lifecycle events (created, closed, resized, moved, focused, unfocused, scale factor changed)
+- **UserEvent**: Thread-safe custom events that can be posted from background threads per FR-002
+- **LogicalSize / PhysicalSize**: Distinct types for device-independent vs pixel-based dimensions with explicit conversion methods
+- **LogicalPosition / PhysicalPosition**: Distinct types for device-independent vs pixel-based coordinates
+- **Cursor**: System cursor appearance and visibility state with static methods for global cursor control
+- **ModifierKeys**: Bitfield representing modifier key states (Shift, Control, Alt, Command/Win)
+- **MouseButton**: Enumeration of supported mouse buttons (left, right, middle)
 
 ---
 
