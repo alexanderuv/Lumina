@@ -65,13 +65,13 @@ A developer wants to create a cross-platform desktop application using Swift tha
 5. **Given** a running application in wait mode, **When** no user input occurs for extended periods, **Then** the application consumes minimal CPU while remaining responsive to new events
 
 ### Edge Cases
-- When a window is resized to minimum or maximum constraints, platform-native behavior applies (may differ between macOS and Windows)
-- Rapid event flooding (e.g., 10,000 mouse events/sec) follows platform-native behavior (may differ per OS)
-- When application loses focus or is minimized, platform-native behavior applies (may differ per OS)
-- Event ordering when multiple input types arrive simultaneously is platform-native (deferred to implementation)
 - Graceful shutdown allows cleanup operations; forced shutdown exits immediately
+- Platform-specific behaviors (resize constraints, event flooding, focus loss, event ordering) are documented in design.md
 
 ## Requirements
+
+### Terminology
+- **System**: Refers to the Lumina library and its public API throughout this specification
 
 ### Functional Requirements
 
@@ -80,13 +80,13 @@ A developer wants to create a cross-platform desktop application using Swift tha
 - **FR-002**: System MUST allow applications to post custom user events into the event queue
 - **FR-003**: System MUST support graceful shutdown via system quit signal or explicit application exit
 - **FR-004**: System MUST enforce single-threaded UI event loop execution
-- **FR-005**: System MUST prevent background threads from directly calling UI APIs
+- **FR-005**: System MUST prevent background threads from directly calling UI APIs (enforced via @MainActor compile-time checks)
 - **FR-033**: System MUST distinguish between graceful shutdown (allowing cleanup) and forced shutdown (immediate exit)
 
 #### Window Management
 - **FR-006**: System MUST support creating, showing, and closing windows
 - **FR-007**: System MUST allow setting and modifying window title at runtime
-- **FR-008**: System MUST support configurable window resizability with min/max size constraints
+- **FR-008**: System MUST support configurable window resizability with min/max size constraints (enforced per platform-native behavior)
 - **FR-009**: System MUST provide window visibility toggle (show/hide)
 - **FR-010**: System MUST support programmatic window focus control
 - **FR-011**: System MUST allow programmatic window repositioning and resizing
@@ -106,7 +106,7 @@ A developer wants to create a cross-platform desktop application using Swift tha
 #### Keyboard Input
 - **FR-019**: System MUST deliver key down and key up events with keycodes
 - **FR-020**: System MUST expose modifier key states (Shift, Ctrl, Alt, Cmd/Win)
-- **FR-021**: System MUST provide UTF-8 text input events for Latin keyboard layouts
+- **FR-021**: System MUST provide UTF-8 text input events for Latin keyboard layouts; extended layout support (Cyrillic, Arabic, CJK) deferred to Wave C
 
 #### System Cursors
 - **FR-022**: System MUST provide standard cursor types: arrow, I-beam, crosshair, resize handles, and hand/pointer
@@ -114,20 +114,19 @@ A developer wants to create a cross-platform desktop application using Swift tha
 
 #### Cross-Platform Parity
 - **FR-024**: All features MUST exhibit identical behavior and event ordering on both macOS and Windows
-- **FR-025**: Event dispatch latency MUST average under 2 milliseconds
-- **FR-026**: System MUST provide explicit error types via Result or typed exceptions
+- **FR-025**: System MUST use Result types for recoverable errors (e.g., window creation failures) and typed throws for programmer errors (e.g., invalid API usage)
 - **FR-031**: Cross-platform parity MUST be validated via unit tests for discrete, testable components plus manual QA verification on both platforms
 
 #### Documentation & Examples
-- **FR-027**: System MUST include "Hello Window" example demonstrating basic window creation
-- **FR-028**: System MUST include "Input Explorer" example displaying all pointer and keyboard events
-- **FR-029**: System MUST include "Scaling Demo" example showing logical vs physical size handling
-- **FR-030**: All public APIs MUST have reference documentation
+- **FR-026**: System MUST include "Hello Window" example demonstrating basic window creation
+- **FR-027**: System MUST include "Input Explorer" example displaying all pointer and keyboard events, demonstrating async/await event handling by dispatching events to async functions
+- **FR-028**: System MUST include "Scaling Demo" example showing logical vs physical size handling
+- **FR-029**: All public APIs MUST have reference documentation
 
 ### Key Entities
 
-- **Application**: Represents the running application instance with event loop control and lifecycle management; can manage multiple windows subject to platform limits
-- **Window**: A platform window with attributes (title, size, position, visibility, focus state) and resizing constraints; multiple instances can coexist per application
+- **Application**: Represents the running application instance; manages event loop (FR-001, FR-004) and lifecycle (FR-003, FR-033); supports multiple windows per FR-032
+- **Window**: A platform window with attributes (title, size, position, visibility, focus state) and resizing constraints per FR-006 through FR-011
 - **Event**: Base type for all events processed by the event loop (window events, input events, user events, system events)
 - **PointerEvent**: Mouse/trackpad input with position, button state, and enter/leave tracking
 - **KeyboardEvent**: Key press/release with keycode, modifiers, and text input for character entry

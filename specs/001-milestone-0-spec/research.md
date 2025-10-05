@@ -233,10 +233,10 @@ extension Application {
 - Modern Swift 6 integration
 
 **Test Coverage Approach**:
-- **Unit tests**: Event loop state machines, geometry conversions, input translation
-- **Integration tests**: Golden event traces (record/replay platform events)
-- **Platform-specific tests**: macOS-only/Windows-only behavior verification
+- **Unit tests**: Discrete components (geometry conversions, event type creation, error handling)
+- **Platform-specific tests**: Window creation, event handling, event sequences, cross-platform parity verification (macOS and Windows)
 - **Stability tests**: 24-hour idle loop (memory leak detection)
+- **Note**: No separate "integration tests" - all windowing tests are platform-dependent per constitution
 
 **Mocking Strategy**:
 - Platform backends are protocol-based, allowing mock implementations
@@ -244,12 +244,12 @@ extension Application {
 
 **Alternatives Considered**:
 - XCTest: Prohibited by constitution
-- Manual testing only: Rejected due to coverage requirements (≥95%)
-- Integration tests only: Rejected because unit tests catch regressions faster
+- Manual testing only: Rejected because automated tests catch regressions faster
+- Traditional integration tests: Not applicable - all windowing tests are platform-dependent
 
 **Key References**:
 - Swift Testing framework documentation
-- Golden testing patterns
+- Event sequence testing patterns
 - Virtualized display testing on CI (Xvfb for Linux, headless Windows)
 
 ---

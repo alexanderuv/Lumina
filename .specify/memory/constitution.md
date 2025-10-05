@@ -1,14 +1,14 @@
 <!--
 Sync Impact Report:
-Version: 1.4.0 → 1.4.1 (PATCH - documentation standards clarification)
+Version: 1.4.1 → 1.4.2 (PATCH - testing standards clarification)
 Modified principles: None
 Modified sections:
-  - Quality Standards > Documentation Standards → Added requirement for relative paths only (no absolute paths)
+  - Quality Standards > Testing Standards → Clarified that integration tests are NOT required (all testing is platform-dependent)
 Added sections: None
 Removed sections: None
 Templates requiring updates:
-  ✅ plan-template.md - No changes needed (already uses relative paths in examples)
-  ✅ spec-template.md - No changes needed (framework-agnostic)
+  ✅ plan-template.md - No changes needed
+  ✅ spec-template.md - No changes needed
   ✅ tasks-template.md - No changes needed
 Follow-up TODOs: None
 -->
@@ -125,6 +125,9 @@ Developers MUST verify the following locally before submitting code for review:
 - XCTest is prohibited
 - Tests MUST support async/await patterns
 - Test names MUST clearly describe what is being tested
+- Integration tests are NOT required; all testing is platform-dependent and requires window creation
+
+**Rationale**: Windowing library tests inherently require platform-specific window creation and event handling. What might traditionally be called "integration tests" are actually platform-specific tests. Unit tests focus on discrete, testable components (geometry calculations, event type conversions, etc.) while platform-specific tests verify actual windowing behavior on each supported platform.
 
 ## Governance
 
@@ -152,4 +155,4 @@ This project is licensed under the MIT License. All contributions MUST comply wi
 - Constitution version changes documented in amendment history
 - Breaking changes require deprecation warnings for at least one minor version
 
-**Version**: 1.4.1 | **Ratified**: 2025-10-04 | **Last Amended**: 2025-10-04
+**Version**: 1.4.2 | **Ratified**: 2025-10-04 | **Last Amended**: 2025-10-04

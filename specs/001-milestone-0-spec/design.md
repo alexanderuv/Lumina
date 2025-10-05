@@ -416,6 +416,24 @@ internal protocol WindowBackend: Sendable {
 
 ## Platform-Specific Implementation Strategy
 
+### Platform-Specific Edge Case Behaviors
+
+**Resize Constraints (min/max size)**:
+- **macOS**: NSWindow enforces constraints automatically; resize operations are clipped to valid range
+- **Windows**: WM_GETMINMAXINFO enforces constraints; resize attempts beyond limits are blocked by OS
+
+**Event Flooding (high-frequency input)**:
+- **macOS**: NSEvent coalescing may occur; rapid mouse moves are merged by AppKit
+- **Windows**: Message queue may drop events under extreme load (>1000 events/sec); OS handles throttling
+
+**Focus Loss / Minimization**:
+- **macOS**: NSWindow delegate receives resignKey/willMiniaturize notifications; app continues running
+- **Windows**: WM_KILLFOCUS / WM_SIZE(SIZE_MINIMIZED) messages delivered; app remains responsive
+
+**Event Ordering (simultaneous inputs)**:
+- **macOS**: NSEvent ordering determined by CFRunLoop priority; keyboard events typically precede mouse
+- **Windows**: Message pump ordering determined by GetMessage sequence; platform-dependent priority
+
 ### macOS Backend (LuminaPlatformMac)
 
 #### MacApplication (EventLoopBackend)
@@ -889,17 +907,31 @@ struct MacPlatformTests {
 #endif
 ```
 
-### Integration Tests (Golden Event Traces)
+### Platform-Specific Tests (Event Sequences)
 
-Record and replay event sequences:
+Test event sequences and cross-platform parity (platform-specific because requires actual window creation):
 
 ```swift
-@Test("Mouse move event sequence")
-func testMouseMoveSequence() async throws {
-    let events = recordedEvents("mouse_move_trace.json")
-    // Replay and verify ordering
+#if os(macOS)
+@Test("Mouse move event sequence on macOS")
+func testMouseMoveSequenceMac() async throws {
+    // Create actual NSWindow
+    // Test mouse move → button press → release sequence
+    // Verify event ordering
 }
+#endif
+
+#if os(Windows)
+@Test("Mouse move event sequence on Windows")
+func testMouseMoveSequenceWin() async throws {
+    // Create actual HWND window
+    // Test mouse move → button press → release sequence
+    // Verify event ordering matches macOS
+}
+#endif
 ```
+
+**Note**: Per constitution, these are platform-specific tests, not integration tests. All windowing tests require actual window creation and are therefore platform-dependent.
 
 ---
 

@@ -18,7 +18,7 @@
    → Update Progress Tracking: Initial Constitution Check
 5. Execute Phase 0 → research.md
    → If NEEDS CLARIFICATION remain: ERROR "Resolve unknowns"
-6. Execute Phase 1 → design.md, agent-specific template file (e.g., `CLAUDE.md` for Claude Code, `.github/copilot-instructions.md` for GitHub Copilot, `GEMINI.md` for Gemini CLI, `QWEN.md` for Qwen Code, or `AGENTS.md` for all other agents).
+6. Execute Phase 1 → design.md, agent-specific template file
 7. Re-evaluate Constitution Check section
    → If new violations: Refactor design, return to Phase 1
    → Update Progress Tracking: Post-Design Constitution Check
@@ -34,16 +34,15 @@
 Deliver a cross-platform desktop windowing foundation for macOS and Windows with complete feature parity. The milestone provides core primitives for window creation, event loop management, user input handling (keyboard, mouse, touch), DPI/scaling support, and system cursor control. This establishes the foundation for any Swift desktop application to create windows and process user interactions across platforms.
 
 ## Technical Context
-**Language/Version**: Swift 6.2+ (strict concurrency, modern result builders, borrowing ownership model)
+**Language/Version**: Swift 6.2+ (strict concurrency, modern result builders, borrowing ownership model) - required on all platforms
 **Primary Dependencies**:
 - macOS: AppKit/Cocoa (CFRunLoop bridge for event loop), Core Graphics (DPI/scaling)
 - Windows: Win32 API (message pump, window management), COM for DPI awareness
 **Storage**: N/A (no persistence in M0)
 **Testing**: Swift Testing framework only (XCTest prohibited per constitution)
-**Target Platform**: macOS 15+ and Windows 11+ (desktop only, no mobile)
+**Target Platform**: macOS 15+ and Windows 11+ (desktop only, no mobile) with Swift 6.2+ toolchain
 **Project Type**: Single Swift Package Manager library with platform-specific backends
 **Performance Goals**:
-- Event dispatch latency < 2ms average
 - Window creation < 100ms on reference hardware
 - No UI thread blocking > 16ms (60fps requirement)
 **Constraints**:
@@ -85,16 +84,16 @@ Deliver a cross-platform desktop windowing foundation for macOS and Windows with
   - Deliverables include Lumina (unified API) + platform-specific backends
 
 ### V. Test Coverage & Quality (Swift Testing Only)
-- [x] Comprehensive tests included using Swift Testing framework (unit, integration, platform-specific)
-  - Unit tests for discrete, testable components
-  - Integration tests with golden event traces for cross-platform parity validation
-  - Platform-specific tests for macOS and Windows backends
+- [x] Comprehensive tests included using Swift Testing framework (unit, platform-specific)
+  - Unit tests for discrete, testable components (geometry, event types)
+  - Platform-specific tests for macOS and Windows backends (window creation, event handling)
+  - No integration tests required (per constitution: all windowing tests are platform-dependent)
   - Automation CI for both platforms
 - [x] NO XCTest usage
   - Technical Context: "Swift Testing framework only (XCTest prohibited)"
 - [x] Tests are maintainable, deterministic, and cover edge cases
   - Edge cases documented in spec (resize constraints, event flooding, focus loss)
-  - Golden event traces for integration tests
+  - Platform-specific tests verify event sequences and cross-platform parity
   - No arbitrary coverage percentage targets (per constitution clarification)
 - [x] Tests support async/await patterns
   - Swift 6.2+ with strict concurrency enabled
@@ -238,9 +237,8 @@ Package.swift                   # Swift Package Manager manifest
    - ScalingDemo (DPI/scaling demonstration)
 
 5. **Test Suite** (after implementation, per constitution):
-   - Unit tests for geometry/events (LuminaTests)
-   - Platform-specific tests (LuminaPlatformMacTests, LuminaPlatformWinTests)
-   - Integration tests (golden event traces)
+   - Unit tests for discrete components (LuminaTests: geometry, event types)
+   - Platform-specific tests (LuminaPlatformMacTests, LuminaPlatformWinTests: window creation, event handling, cross-platform parity)
 
 **Parallelization** (mark [P] for):
 - Foundation types (independent files)
@@ -306,4 +304,4 @@ Package.swift                   # Swift Package Manager manifest
 - Ready for /tasks command (Phase 3)
 
 ---
-*Based on Constitution v1.3.0 - See `.specify/memory/constitution.md`*
+*Based on Constitution v1.4.2 - See `.specify/memory/constitution.md`*
