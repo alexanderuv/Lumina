@@ -18,7 +18,7 @@
    → Update Progress Tracking: Initial Constitution Check
 5. Execute Phase 0 → research.md
    → If NEEDS CLARIFICATION remain: ERROR "Resolve unknowns"
-6. Execute Phase 1 → contracts, data-model.md, quickstart.md, agent-specific template file (e.g., `CLAUDE.md` for Claude Code, `.github/copilot-instructions.md` for GitHub Copilot, `GEMINI.md` for Gemini CLI, `QWEN.md` for Qwen Code, or `AGENTS.md` for all other agents).
+6. Execute Phase 1 → design.md, agent-specific template file (e.g., `CLAUDE.md` for Claude Code, `.github/copilot-instructions.md` for GitHub Copilot, `GEMINI.md` for Gemini CLI, `QWEN.md` for Qwen Code, or `AGENTS.md` for all other agents).
 7. Re-evaluate Constitution Check section
    → If new violations: Refactor design, return to Phase 1
    → Update Progress Tracking: Post-Design Constitution Check
@@ -60,13 +60,13 @@
 - [ ] Avoids legacy patterns and unsafe constructs unless justified
 
 ### IV. Cross-Platform Compatibility
-- [ ] Feature works across all supported platforms (macOS, iOS, Linux, Windows) OR is explicitly documented as platform-specific
+- [ ] Feature works across all supported platforms (macOS 15+, Windows 11+) OR is explicitly documented as platform-specific
 - [ ] Platform abstractions are clean and testable
 
 ### V. Test Coverage & Quality (Swift Testing Only)
 - [ ] Comprehensive tests included using Swift Testing framework (unit, integration, platform-specific)
 - [ ] NO XCTest usage
-- [ ] Minimum 80% code coverage
+- [ ] Tests written for discrete, testable components (no arbitrary coverage percentage targets)
 - [ ] Tests are maintainable, deterministic, and cover edge cases
 - [ ] Tests support async/await patterns
 
@@ -83,9 +83,7 @@
 specs/[###-feature]/
 ├── plan.md              # This file (/plan command output)
 ├── research.md          # Phase 0 output (/plan command)
-├── data-model.md        # Phase 1 output (/plan command)
-├── quickstart.md        # Phase 1 output (/plan command)
-├── contracts/           # Phase 1 output (/plan command)
+├── design.md            # Phase 1 output (/plan command)
 └── tasks.md             # Phase 2 output (/tasks command - NOT created by /plan)
 ```
 
@@ -156,29 +154,19 @@ directories captured above]
 
 **Output**: research.md with all NEEDS CLARIFICATION resolved
 
-## Phase 1: Design & Contracts
+## Phase 1: Design Document
 *Prerequisites: research.md complete*
 
-1. **Extract entities from feature spec** → `data-model.md`:
-   - Entity name, fields, relationships
-   - Validation rules from requirements
-   - State transitions if applicable
+1. **Create comprehensive design document** → `design.md`:
+   - Architecture overview (modules, components, layers)
+   - Type system design (structs, enums, protocols, type relationships)
+   - Key abstractions and their responsibilities
+   - Platform-specific implementation strategy
+   - Thread safety and concurrency model
+   - Error handling approach
+   - Performance considerations and trade-offs
 
-2. **Generate API contracts** from functional requirements:
-   - For each user action → endpoint
-   - Use standard REST/GraphQL patterns
-   - Output OpenAPI/GraphQL schema to `/contracts/`
-
-3. **Generate contract tests** from contracts:
-   - One test file per endpoint
-   - Assert request/response schemas
-   - Tests must fail (no implementation yet)
-
-4. **Extract test scenarios** from user stories:
-   - Each story → integration test scenario
-   - Quickstart test = story validation steps
-
-5. **Update agent file incrementally** (O(1) operation):
+2. **Update agent file incrementally** (O(1) operation):
    - Run `.specify/scripts/bash/update-agent-context.sh claude`
      **IMPORTANT**: Execute it exactly as specified above. Do not add or remove any arguments.
    - If exists: Add only NEW tech from current plan
@@ -187,18 +175,17 @@ directories captured above]
    - Keep under 150 lines for token efficiency
    - Output to repository root
 
-**Output**: data-model.md, /contracts/*, failing tests, quickstart.md, agent-specific file
+**Output**: design.md, agent-specific file
 
 ## Phase 2: Task Planning Approach
 *This section describes what the /tasks command will do - DO NOT execute during /plan*
 
 **Task Generation Strategy**:
 - Load `.specify/templates/tasks-template.md` as base
-- Generate tasks from Phase 1 design docs (contracts, data model, quickstart)
-- Each contract → contract test task [P]
-- Each entity → model creation task [P] 
+- Generate tasks from Phase 1 design doc (design.md)
+- Each module/component → implementation task
 - Each user story → integration test task
-- Implementation tasks to make tests pass
+- Implementation tasks follow dependency order from design
 
 **Ordering Strategy**:
 - TDD order: Tests before implementation 

@@ -1,15 +1,15 @@
 <!--
 Sync Impact Report:
-Version: 1.2.1 → 1.3.0 (MINOR - explicit non-TDD testing methodology added)
-Modified principles:
-  - V. Test Coverage & Quality → Updated to clarify NO TDD requirement
-Added sections:
-  - Development Workflow > Testing Methodology (new subsection)
+Version: 1.4.0 → 1.4.1 (PATCH - documentation standards clarification)
+Modified principles: None
+Modified sections:
+  - Quality Standards > Documentation Standards → Added requirement for relative paths only (no absolute paths)
+Added sections: None
 Removed sections: None
 Templates requiring updates:
-  ✅ plan-template.md - No changes needed (constitution check remains same)
+  ✅ plan-template.md - No changes needed (already uses relative paths in examples)
   ✅ spec-template.md - No changes needed (framework-agnostic)
-  ✅ tasks-template.md - Needs TDD references removed
+  ✅ tasks-template.md - No changes needed
 Follow-up TODOs: None
 -->
 
@@ -33,14 +33,18 @@ All code MUST leverage Swift 6.2+ features including strict concurrency, modern 
 **Rationale**: Swift 6.2+ provides superior memory safety, concurrency guarantees, and expressiveness. Using modern idioms ensures long-term maintainability and reduces runtime errors.
 
 ### IV. Cross-Platform Compatibility
-Features MUST work across all supported platforms (macOS, iOS, Linux, Windows) unless explicitly documented as platform-specific. Platform abstractions MUST be clean, testable, and avoid leaking platform details.
+Features MUST work across all supported platforms unless explicitly documented as platform-specific. Platform abstractions MUST be clean, testable, and avoid leaking platform details.
 
-**Rationale**: Lumina is a cross-platform library. Platform-specific code creates fragmentation and maintenance burden. Abstractions ensure consistent behavior and easier testing.
+**Supported Platforms**:
+- macOS 15+ (Sequoia and later)
+- Windows 11+
+
+**Rationale**: Lumina is a cross-platform library. Platform-specific code creates fragmentation and maintenance burden. Abstractions ensure consistent behavior and easier testing. Minimum platform versions ensure access to modern APIs and reduce compatibility burden.
 
 ### V. Test Coverage & Quality (Swift Testing Only)
-All features MUST include comprehensive tests using Swift Testing framework. XCTest is prohibited. Tests MUST be maintainable, deterministic, and cover edge cases. Minimum 80% code coverage required. The project does NOT follow TDD; tests are written after implementation to verify behavior.
+All features MUST include comprehensive tests using Swift Testing framework. XCTest is prohibited. Tests MUST be maintainable, deterministic, and cover edge cases. Tests MUST be written for discrete, testable components without arbitrary coverage percentage targets. The project does NOT follow TDD; tests are written after implementation to verify behavior.
 
-**Rationale**: Swift Testing provides modern async/await support, better diagnostics, and superior Swift 6 integration compared to XCTest. Standardizing on one framework reduces cognitive overhead and improves test maintainability. A windowing library interacts with OS-level APIs where bugs have high user impact. Due to the exploratory nature of windowing system integration, TDD is not practical; implementation-first with comprehensive test coverage is the chosen approach.
+**Rationale**: Swift Testing provides modern async/await support, better diagnostics, and superior Swift 6 integration compared to XCTest. Standardizing on one framework reduces cognitive overhead and improves test maintainability. A windowing library interacts with OS-level APIs where bugs have high user impact. Due to the exploratory nature of windowing system integration, TDD is not practical; implementation-first with comprehensive test coverage is the chosen approach. Coverage percentages are not mandated as they can encourage gaming metrics rather than meaningful testing.
 
 ### VI. Borrowing Ownership Model
 Developers MUST make every effort to reduce reliance on Swift ARC and prefer the borrowing ownership model where feasible. Use `borrowing` and `consuming` parameter modifiers, avoid unnecessary reference counting overhead, and design APIs that minimize retain/release cycles.
@@ -52,7 +56,7 @@ Developers MUST make every effort to reduce reliance on Swift ARC and prefer the
 ### Testing Methodology
 This project does NOT follow Test-Driven Development (TDD). Due to the exploratory nature of windowing system integration and platform-specific APIs, implementation comes first followed by comprehensive test coverage. Tests verify correct behavior after implementation is complete.
 
-**Workflow**: Implement → Verify manually → Write comprehensive tests → Achieve 80% coverage
+**Workflow**: Implement → Verify manually → Write comprehensive tests for discrete, testable components
 
 **Rationale**: Windowing APIs require experimentation with OS-specific behaviors that are difficult to specify upfront. Writing tests after understanding the platform behavior leads to more accurate and maintainable tests.
 
@@ -112,6 +116,9 @@ Developers MUST verify the following locally before submitting code for review:
 - Internal APIs: Purpose and usage documentation
 - Complex algorithms: Explanation of approach and trade-offs
 - Platform-specific code: Why platform-specific and alternatives considered
+- File paths: MUST use relative paths in all documentation and code; absolute paths are prohibited
+
+**Rationale**: Absolute paths break portability across development environments, CI/CD systems, and user machines. Relative paths ensure documentation and code work regardless of repository location.
 
 ### Testing Standards
 - All tests MUST use Swift Testing framework
@@ -145,4 +152,4 @@ This project is licensed under the MIT License. All contributions MUST comply wi
 - Constitution version changes documented in amendment history
 - Breaking changes require deprecation warnings for at least one minor version
 
-**Version**: 1.3.0 | **Ratified**: 2025-10-04 | **Last Amended**: 2025-10-04
+**Version**: 1.4.1 | **Ratified**: 2025-10-04 | **Last Amended**: 2025-10-04
