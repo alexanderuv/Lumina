@@ -8,6 +8,16 @@ import Foundation
 /// This implementation wraps NSApplication's event loop and provides
 /// Lumina's cross-platform event loop interface. It handles NSEvent
 /// translation, user event queuing, and low-power wait modes.
+/// App delegate to handle automatic termination when last window closes
+@MainActor
+private final class MacAppDelegate: NSObject, NSApplicationDelegate {
+    var exitOnLastWindowClosed: Bool = true
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        return exitOnLastWindowClosed
+    }
+}
+
 /// Thread-safe user event queue
 private final class UserEventQueue: @unchecked Sendable {
     private let lock = NSLock()
@@ -28,14 +38,62 @@ private final class UserEventQueue: @unchecked Sendable {
     }
 }
 
+/// Thread-safe window event queue
+private final class WindowEventQueue: @unchecked Sendable {
+    private let lock = NSLock()
+    private var events: [WindowEvent] = []
+
+    func append(_ event: WindowEvent) {
+        lock.lock()
+        defer { lock.unlock() }
+        events.append(event)
+    }
+
+    func removeAll() -> [WindowEvent] {
+        lock.lock()
+        defer { lock.unlock() }
+        let allEvents = events
+        events.removeAll()
+        return allEvents
+    }
+}
+
+/// macOS implementation of LuminaApp.
+///
+/// **Do not instantiate this type directly.** Use `LuminaApp.create()` instead.
+///
+/// This type is public only because Swift requires it for protocol extensions.
+/// It should be treated as an implementation detail.
 @MainActor
-internal struct MacApplication: PlatformApp {
+struct MacApplication: LuminaApp {
     private var shouldQuit: Bool = false
     private let userEventQueue = UserEventQueue()
+    private let windowEventQueue = WindowEventQueue()
+    private var windowRegistry = WindowRegistry<Int>()  // NSWindow.windowNumber -> WindowID
+    private var onWindowClosed: WindowCloseCallback?
+    private let appDelegate: MacAppDelegate
 
-    internal init() throws {
+    /// Track pointer enter/exit state per window to deduplicate events.
+    /// AppKit can spam us with duplicate mouseEntered/mouseExited events,
+    /// similar to SDL's handling in SDL_cocoawindow.m
+    private var pointerInsideWindow: [WindowID: Bool] = [:]
+
+    /// Whether the application should quit when the last window is closed.
+    var exitOnLastWindowClosed: Bool {
+        get { appDelegate.exitOnLastWindowClosed }
+        set { appDelegate.exitOnLastWindowClosed = newValue }
+    }
+
+    init() throws {
         // Ensure NSApplication is initialized
         _ = NSApplication.shared
+
+        // Create and set app delegate
+        let delegate = MacAppDelegate()
+        self.appDelegate = delegate
+        if NSApp.delegate == nil {
+            NSApp.delegate = delegate
+        }
 
         // Set activation policy to regular app (shows in Dock)
         NSApp.setActivationPolicy(.regular)
@@ -92,26 +150,93 @@ internal struct MacApplication: PlatformApp {
         }
     }
 
-    mutating func poll() throws -> Bool {
-        var processedAny = false
+    mutating func poll() throws -> Event? {
+        // Loop until we find a translatable event or run out of events
+        while true {
+            // Check for pending NSEvents (non-blocking)
+            guard let nsEvent = NSApp.nextEvent(
+                matching: .any,
+                until: .distantPast,  // Non-blocking: return immediately
+                inMode: .default,
+                dequeue: true
+            ) else {
+                // No NSEvents available, check for window events first, then user events
+                if let windowEvent = pollWindowEvent() {
+                    return windowEvent
+                }
+                return pollUserEvent()
+            }
 
-        // Process all available NSEvents (non-blocking)
-        while let nsEvent = NSApp.nextEvent(
-            matching: .any,
-            until: .distantPast,  // Non-blocking: return immediately
-            inMode: .default,
-            dequeue: true
-        ) {
+            // Send event to NSApp for standard processing (window management, etc.)
             NSApp.sendEvent(nsEvent)
-            processedAny = true
+
+            // Try to translate to Lumina event if it's associated with a tracked window
+            if let windowNumber = nsEvent.window?.windowNumber,
+               let windowID = windowRegistry.windowID(for: windowNumber) {
+                if let event = translateNSEvent(nsEvent, for: windowID) {
+                    // Handle mouse focus: generate enter on first movement,
+                    // respect exit but filter spurious ones
+                    if case .pointer(let pointerEvent) = event {
+                        switch pointerEvent {
+                        case .moved(let id, _):
+                            // Generate enter event on first movement in window
+                            let wasInside = pointerInsideWindow[id] ?? false
+                            if !wasInside {
+                                pointerInsideWindow[id] = true
+                                return .pointer(.entered(id))
+                            }
+                        case .entered(_):
+                            // Ignore enter events - generate from move instead
+                            continue
+                        case .left(let id):
+                            // Respect exit events, but only if we were inside
+                            if pointerInsideWindow[id] == true {
+                                pointerInsideWindow[id] = false
+                            } else {
+                                // Skip spurious exit
+                                continue
+                            }
+                        default:
+                            break
+                        }
+                    }
+                    return event
+                }
+            }
+
+            // Event processed but not translatable (e.g., menu events, system events)
+            // Continue looping to check for the next event
+        }
+    }
+
+    /// Poll for a single window event from the queue.
+    private mutating func pollWindowEvent() -> Event? {
+        let pendingEvents = windowEventQueue.removeAll()
+        guard let windowEvent = pendingEvents.first else {
+            return nil
         }
 
-        // Process any pending user events
-        if processUserEvents() {
-            processedAny = true
+        // Re-queue remaining events
+        for event in pendingEvents.dropFirst() {
+            windowEventQueue.append(event)
         }
 
-        return processedAny
+        return .window(windowEvent)
+    }
+
+    /// Poll for a single user event from the queue.
+    private mutating func pollUserEvent() -> Event? {
+        let pendingEvents = userEventQueue.removeAll()
+        guard let userEvent = pendingEvents.first else {
+            return nil
+        }
+
+        // Re-queue remaining events
+        for event in pendingEvents.dropFirst() {
+            userEventQueue.append(event)
+        }
+
+        return .user(userEvent)
     }
 
     mutating func wait() throws {
@@ -123,30 +248,82 @@ internal struct MacApplication: PlatformApp {
         processUserEvents()
     }
 
-    nonisolated func postUserEvent(_ event: UserEvent) {
+    func postUserEvent(_ event: UserEvent) {
         // Thread-safe enqueue
         userEventQueue.append(event)
 
         // Wake up the event loop by posting a dummy NSEvent
         // This ensures wait() wakes up when a user event is posted
-        let dummyEvent = NSEvent.otherEvent(
-            with: .applicationDefined,
-            location: .zero,
-            modifierFlags: [],
-            timestamp: ProcessInfo.processInfo.systemUptime,
-            windowNumber: 0,
-            context: nil,
-            subtype: 0,
-            data1: 0,
-            data2: 0
-        )
+        // Post to MainActor since NSApp.postEvent requires main thread
+        Task { @MainActor in
+            let dummyEvent = NSEvent.otherEvent(
+                with: .applicationDefined,
+                location: .zero,
+                modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: 0,
+                context: nil,
+                subtype: 0,
+                data1: 0,
+                data2: 0
+            )
 
-        if let event = dummyEvent {
-            // NSApp.postEvent is main-actor isolated, but it's safe to call from any thread
-            MainActor.assumeIsolated {
+            if let event = dummyEvent {
                 NSApp.postEvent(event, atStart: false)
             }
         }
+    }
+
+    mutating func createWindow(
+        title: String,
+        size: LogicalSize,
+        resizable: Bool,
+        monitor: Monitor?
+    ) -> Result<LuminaWindow, LuminaError> {
+        // Capture windowEventQueue for posting close events
+        let eventQueue = windowEventQueue
+
+        // Create the window using MacWindow
+        let result = MacWindow.create(
+            title: title,
+            size: size,
+            resizable: resizable,
+            monitor: monitor,
+            closeCallback: { [onWindowClosed] windowID in
+                // Post a window closed event so custom event loops can detect it
+                eventQueue.append(.closed(windowID))
+
+                // Wake up the event loop
+                let dummyEvent = NSEvent.otherEvent(
+                    with: .applicationDefined,
+                    location: .zero,
+                    modifierFlags: [],
+                    timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: 0,
+                    context: nil,
+                    subtype: 0,
+                    data1: 0,
+                    data2: 0
+                )
+                if let event = dummyEvent {
+                    NSApp.postEvent(event, atStart: false)
+                }
+
+                // Trigger the application's close callback
+                onWindowClosed?(windowID)
+            }
+        )
+
+        // Register the window if creation succeeded
+        if case .success(let macWindow) = result {
+            windowRegistry.register(macWindow.windowNumber, id: macWindow.id)
+        }
+
+        return result.map { $0 as LuminaWindow }
+    }
+
+    mutating func setWindowCloseCallback(_ callback: @escaping WindowCloseCallback) {
+        onWindowClosed = callback
     }
 
     func quit() {

@@ -31,9 +31,11 @@ struct ErrorTests {
 
         @Test("Create platform error")
         func platformError() {
-            let error = LuminaError.platformError(code: 123, message: "Graphics initialization failed")
+            let error = LuminaError.platformError(platform: "macOS", operation: "Graphics init", code: 123, message: "Graphics initialization failed")
 
-            if case .platformError(let code, let message) = error {
+            if case .platformError(let platform, let operation, let code, let message) = error {
+                #expect(platform == "macOS")
+                #expect(operation == "Graphics init")
                 #expect(code == 123)
                 #expect(message == "Graphics initialization failed")
             } else {
@@ -141,12 +143,13 @@ struct ErrorTests {
 
         @Test("Platform error description")
         func platformErrorDescription() {
-            let error = LuminaError.platformError(code: 42, message: "Test error")
+            let error = LuminaError.platformError(platform: "Test", operation: "TestOp", code: 42, message: "Test error")
             let description = error.description
 
-            #expect(description.contains("Platform error"))
-            #expect(description.contains("42"))
-            #expect(description.contains("Test error"))
+            #expect(description.contains("Test"))  // Platform name
+            #expect(description.contains("TestOp"))  // Operation
+            #expect(description.contains("42"))  // Error code
+            #expect(description.contains("Test error"))  // Message
         }
 
         @Test("Invalid state description")
@@ -190,11 +193,11 @@ struct ErrorTests {
 
         @Test("Match platform error")
         func matchPlatformError() {
-            let error = LuminaError.platformError(code: 100, message: "Test")
+            let error = LuminaError.platformError(platform: "Test", operation: "TestOp", code: 100, message: "Test")
             var matched = false
 
             switch error {
-            case .platformError(let code, _):
+            case .platformError(_, _, let code, _):
                 matched = true
                 #expect(code == 100)
             default:
@@ -260,13 +263,13 @@ struct ErrorTests {
 
         @Test("Can use in Task")
         func useInTask() async {
-            let error = LuminaError.platformError(code: 42, message: "Async test")
+            let error = LuminaError.platformError(platform: "Test", operation: "AsyncOp", code: 42, message: "Async test")
 
             let taskError = await Task {
                 error  // Capture and return error
             }.value
 
-            if case .platformError(let code, let message) = taskError {
+            if case .platformError(_, _, let code, let message) = taskError {
                 #expect(code == 42)
                 #expect(message == "Async test")
             } else {

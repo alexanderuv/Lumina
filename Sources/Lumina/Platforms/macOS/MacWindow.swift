@@ -2,16 +2,26 @@
 import AppKit
 import Foundation
 
-/// Window delegate to handle close events and terminate the app
+/// Window delegate to handle close events
 @MainActor
 private final class MacWindowDelegate: NSObject, NSWindowDelegate {
+    private let windowID: WindowID
+    private let closeCallback: WindowCloseCallback?
+
+    init(windowID: WindowID, closeCallback: WindowCloseCallback?) {
+        self.windowID = windowID
+        self.closeCallback = closeCallback
+        super.init()
+    }
+
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         return true
     }
 
     func windowWillClose(_ notification: Notification) {
-        // Terminate the application when the window closes
-        NSApp.terminate(nil)
+        // Notify the application that this window is closing
+        // This will unregister the window from the app's registry
+        closeCallback?(windowID)
     }
 }
 
@@ -22,10 +32,15 @@ private final class MacWindowDelegate: NSObject, NSWindowDelegate {
 /// bottom-left origin, Lumina uses top-left), DPI scaling, and window state
 /// management.
 @MainActor
-internal struct MacWindow: PlatformWindow {
+internal struct MacWindow: LuminaWindow {
     let id: WindowID
     private var nsWindow: NSWindow
     private var delegate: MacWindowDelegate
+
+    /// Expose the NSWindow's window number for event routing.
+    internal var windowNumber: Int {
+        nsWindow.windowNumber
+    }
 
     /// Create a new macOS window.
     ///
@@ -34,12 +49,14 @@ internal struct MacWindow: PlatformWindow {
     ///   - size: Initial logical size
     ///   - resizable: Whether the window can be resized by the user
     ///   - monitor: Optional monitor to create the window on (uses primary if nil)
+    ///   - closeCallback: Optional callback to invoke when the window closes
     /// - Returns: Result containing MacWindow or LuminaError
     internal static func create(
         title: String,
         size: LogicalSize,
         resizable: Bool,
-        monitor: Monitor? = nil
+        monitor: Monitor? = nil,
+        closeCallback: WindowCloseCallback? = nil
     ) -> Result<MacWindow, LuminaError> {
         // Create content rect for the window
         let contentRect = NSRect(
@@ -98,12 +115,14 @@ internal struct MacWindow: PlatformWindow {
         // Enable automatic background color (system-appropriate)
         nsWindow.backgroundColor = .windowBackgroundColor
 
+        // Create window ID first (needed for delegate)
+        let windowID = WindowID()
+
         // Create and set delegate to handle close events
-        let delegate = MacWindowDelegate()
+        let delegate = MacWindowDelegate(windowID: windowID, closeCallback: closeCallback)
         nsWindow.delegate = delegate
 
-        // Create window ID and wrapper
-        let windowID = WindowID()
+        // Create window wrapper
         let macWindow = MacWindow(id: windowID, nsWindow: nsWindow, delegate: delegate)
 
         return .success(macWindow)

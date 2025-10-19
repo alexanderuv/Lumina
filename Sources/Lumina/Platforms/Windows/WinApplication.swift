@@ -49,15 +49,31 @@ private final class UserEventQueue: @unchecked Sendable {
 // Custom message ID for user events (WM_USER + 1)
 private let WM_LUMINA_USER_EVENT: UINT = UINT(WM_USER + 1)
 
+/// Windows implementation of LuminaApp.
+///
+/// **Do not instantiate this type directly.** Use `LuminaApp.create()` instead.
+///
+/// This type is public only because Swift requires it for protocol extensions.
+/// It should be treated as an implementation detail.
 @MainActor
-public struct WinApplication: PlatformApp {
+struct WinApplication: LuminaApp {
     private var shouldQuit: Bool = false
     private let userEventQueue = UserEventQueue()
+    private var windowRegistry = WindowRegistry<HWND>()  // HWND -> WindowID
+    private var onWindowClosed: WindowCloseCallback?
+
+    /// The main thread ID - captured at init time for thread-safe postUserEvent
+    private let mainThreadId: DWORD
 
     /// The detected DPI awareness level of the application
-    public private(set) var dpiAwarenessLevel: DpiAwarenessLevel = .unknown
+    private(set) var dpiAwarenessLevel: DpiAwarenessLevel = .unknown
 
-    public init() throws {
+    /// Whether the application should quit when the last window is closed.
+    var exitOnLastWindowClosed: Bool = true
+
+    init() throws {
+        // Capture the main thread ID for use in postUserEvent
+        self.mainThreadId = GetCurrentThreadId()
         // Set DPI awareness for proper scaling
         // Try Per-Monitor V2 first (Windows 10 1703+), which automatically scales non-client areas
         // If that fails, fall back to Per-Monitor V1
@@ -97,23 +113,46 @@ public struct WinApplication: PlatformApp {
         }
     }
 
-    public mutating func poll() throws -> Bool {
-        // Non-blocking message pump
-        var msg = MSG()
-        var processedAny = false
+    mutating func poll() throws -> Event? {
+        // Loop until we find a translatable event or run out of events
+        while true {
+            // Non-blocking message pump
+            var msg = MSG()
 
-        while PeekMessageW(&msg, nil, 0, 0, UINT(PM_REMOVE)) {
+            guard PeekMessageW(&msg, nil, 0, 0, UINT(PM_REMOVE)) else {
+                // No messages available
+                return nil
+            }
+
             TranslateMessage(&msg)
             DispatchMessageW(&msg)
-            processedAny = true
 
-            // Process user events if we received our custom message
+            // TODO: Translate Windows messages to Lumina events
+            // For now, just process messages without returning events
+            // Full implementation requires WinInput translation similar to MacInput
+
+            // Check for user events
             if msg.message == WM_LUMINA_USER_EVENT {
-                processUserEvents()
+                return pollUserEvent()
             }
+
+            // Continue looping to check for the next message
+        }
+    }
+
+    /// Poll for a single user event from the queue.
+    private mutating func pollUserEvent() -> Event? {
+        let pendingEvents = userEventQueue.removeAll()
+        guard let userEvent = pendingEvents.first else {
+            return nil
         }
 
-        return processedAny
+        // Re-queue remaining events
+        for event in pendingEvents.dropFirst() {
+            userEventQueue.append(event)
+        }
+
+        return .user(userEvent)
     }
 
     public mutating func wait() throws {
@@ -136,12 +175,28 @@ public struct WinApplication: PlatformApp {
         // Add event to queue
         userEventQueue.append(event)
 
-        // Wake up the message loop by posting a custom message
-        // We post to the thread message queue (HWND_BROADCAST ensures delivery)
-        PostThreadMessageW(GetCurrentThreadId(), WM_LUMINA_USER_EVENT, 0, 0)
+        // Wake up the message loop by posting a custom message to the MAIN thread
+        // Use the captured mainThreadId, not GetCurrentThreadId() which returns the calling thread
+        PostThreadMessageW(mainThreadId, WM_LUMINA_USER_EVENT, 0, 0)
     }
 
-    public func quit() {
+    mutating func createWindow(
+        title: String,
+        size: LogicalSize,
+        resizable: Bool,
+        monitor: Monitor?
+    ) -> Result<PlatformWindow, LuminaError> {
+        // TODO: Implement window creation with Win32 API
+        // This requires WinWindow.create() to accept closeCallback parameter
+        // and registration similar to MacApplication
+        fatalError("Windows createWindow not yet implemented")
+    }
+
+    mutating func setWindowCloseCallback(_ callback: @escaping WindowCloseCallback) {
+        onWindowClosed = callback
+    }
+
+    func quit() {
         // Post quit message to terminate the message loop
         PostQuitMessage(0)
         var mutableSelf = self

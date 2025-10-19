@@ -1,56 +1,140 @@
 import Lumina
 import Foundation
 
-/// InputExplorer - Demonstrates async/await works with event loop
+/// InputExplorer - Demonstrates event handling in Milestone 0
 ///
-/// NOTE: Milestone 0 doesn't have event callbacks yet.
-/// This example shows that async tasks work alongside the event loop,
-/// and demonstrates the event types that will be used in future milestones.
+/// This example shows all the event types supported in M0:
+/// - Window events (closed, resized, moved, focus, scale factor)
+/// - Pointer events (motion, button press/release, scroll, enter/leave)
+/// - Keyboard events (key down/up, modifiers, text input)
+/// - User events (custom events from background threads)
 
 @main
-struct InputExplorer: LuminaApp {
-    func configure() async throws {
-        var window = try Window.create(
-            title: "Input Explorer - Event Types Demo",
-            size: LogicalSize(width: 600, height: 400)
+struct InputExplorer {
+    static func main() throws {
+        var app = try createLuminaApp()
+
+        var window = try app.createWindow(
+            title: "Input Explorer - All M0 Events",
+            size: LogicalSize(width: 600, height: 400),
+            resizable: true,
+            monitor: nil
         ).get()
 
         window.show()
 
-        print("=== Input Explorer - Event Types ===\n")
-        print("Milestone 0: Event loop + async/await demonstration")
-        print("(Event handling callbacks will be added in a future milestone)\n")
+        print("=== Input Explorer - Milestone 0 Events ===\n")
+        print("This example demonstrates ALL events supported in M0:")
+        print("  • Window: close, resize, move, focus, scale factor")
+        print("  • Pointer: motion, buttons, scroll, enter/leave")
+        print("  • Keyboard: key down/up, modifiers, text input")
+        print("  • User: custom background thread events")
+        print("\nTry interacting with the window!")
+        print("Close window or press Cmd+Q to exit.\n")
 
-        // Demonstrate the event types that exist (even though we can't process them yet)
-        print("Available Event Types:")
-        demonstrateEventTypes()
+        // Custom event loop
+        var running = true
+        var eventCount = 0
 
-        print("\n✓ Event loop is running")
-        print("✓ Async tasks work concurrently")
-        print("✓ Window interaction works (try resizing, moving)")
-        print("\nClose window or press Cmd+Q to exit.")
+        while running {
+            // Poll for events
+            while let event = try app.poll() {
+                eventCount += 1
 
-        // Spawn async task to demonstrate async/await works with event loop
-        _ = Task {
-            for i in 1...3 {
-                try? await Task.sleep(for: .seconds(2))
-                print("[\(Date())] Async task \(i) - event loop still responsive!")
+                switch event {
+                // Window Events
+                case .window(let windowEvent):
+                    switch windowEvent {
+                    case .closed(let id):
+                        print("[\(eventCount)] !!!!! WINDOW CLOSED EVENT: \(id)")
+                        running = false
+
+                    case .resized(let id, let size):
+                        print("[\(eventCount)] Window resized: \(id) -> \(size.width)x\(size.height)")
+
+                    case .moved(let id, let pos):
+                        print("[\(eventCount)] Window moved: \(id) -> (\(pos.x), \(pos.y))")
+
+                    case .focused(let id):
+                        print("[\(eventCount)] Window gained focus: \(id)")
+
+                    case .unfocused(let id):
+                        print("[\(eventCount)] Window lost focus: \(id)")
+
+                    case .scaleFactorChanged(let id, let oldFactor, let newFactor):
+                        print("[\(eventCount)] Scale factor changed: \(id) -> \(oldFactor)x to \(newFactor)x")
+
+                    case .created(_):
+                        break  // Don't print window created events
+                    }
+
+                // Pointer Events
+                case .pointer(let pointerEvent):
+                    switch pointerEvent {
+                    case .moved(let id, let pos):
+                        // Only print every 60th move event to avoid spam
+                        if eventCount % 60 == 0 {
+                            print("[\(eventCount)] Pointer moved: \(id) -> (\(pos.x), \(pos.y))")
+                        }
+
+                    case .buttonPressed(let id, let button, let pos):
+                        print("[\(eventCount)] Button pressed: \(id) \(button) at (\(pos.x), \(pos.y))")
+
+                    case .buttonReleased(let id, let button, let pos):
+                        print("[\(eventCount)] Button released: \(id) \(button) at (\(pos.x), \(pos.y))")
+
+                    case .wheel(let id, let dx, let dy):
+                        print("[\(eventCount)] Scroll: \(id) -> dx=\(dx), dy=\(dy)")
+
+                    case .entered(let id):
+                        print("[\(eventCount)] Pointer entered window: \(id)")
+
+                    case .left(let id):
+                        print("[\(eventCount)] Pointer left window: \(id)")
+                    }
+
+                // Keyboard Events
+                case .keyboard(let keyboardEvent):
+                    switch keyboardEvent {
+                    case .keyDown(let id, let key, let mods):
+                        let modStr = formatModifiers(mods)
+                        print("[\(eventCount)] Key down: \(id) key=\(key.rawValue) mods=\(modStr)")
+
+                    case .keyUp(let id, let key, let mods):
+                        let modStr = formatModifiers(mods)
+                        print("[\(eventCount)] Key up: \(id) key=\(key.rawValue) mods=\(modStr)")
+
+                    case .textInput(let id, let text):
+                        print("[\(eventCount)] Text input: \(id) -> \"\(text)\"")
+                    }
+
+                // User Events
+                case .user(let userEvent):
+                    print("[\(eventCount)] User event: \(userEvent.data)")
+                }
             }
+
+            if !running {
+                break
+            }
+
+            // Wait for next event (low-power sleep)
+            try app.wait()
         }
+
+        // Keep window alive
+        _ = window
+
+        print("\n✓ Total events processed: \(eventCount)")
+        print("✓ Event loop demonstration complete!")
     }
-}
 
-/// Demonstrate the event types defined in Milestone 0
-func demonstrateEventTypes() {
-    // Window events
-    print("  Window: .resized, .moved, .closed, .focusGained, .focusLost, .scaleFactorChanged")
-
-    // Pointer events
-    print("  Pointer: .moved, .buttonPressed, .buttonReleased, .scrolled")
-
-    // Keyboard events
-    print("  Keyboard: .keyPressed, .keyReleased, .textInput")
-
-    // User events
-    print("  User: .user (custom events from background threads)")
+    static func formatModifiers(_ mods: ModifierKeys) -> String {
+        var parts: [String] = []
+        if mods.contains(.shift) { parts.append("Shift") }
+        if mods.contains(.control) { parts.append("Ctrl") }
+        if mods.contains(.alt) { parts.append("Alt") }
+        if mods.contains(.command) { parts.append("Cmd") }
+        return parts.isEmpty ? "none" : parts.joined(separator: "+")
+    }
 }

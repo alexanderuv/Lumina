@@ -3,13 +3,17 @@ import Lumina
 /// ScalingDemo - DPI and scale factor demonstration
 
 @main
-struct ScalingDemo: LuminaApp {
-    func configure() throws {
+struct ScalingDemo {
+    static func main() throws {
+        var app = try createLuminaApp()
+
         let logicalSize = LogicalSize(width: 800, height: 600)
 
-        var window = try Window.create(
+        var window = try app.createWindow(
             title: "Scaling Demo - DPI & Scale Factor",
-            size: logicalSize
+            size: logicalSize,
+            resizable: true,
+            monitor: nil
         ).get()
 
         window.show()
@@ -22,6 +26,9 @@ struct ScalingDemo: LuminaApp {
         print("  Logical:  \(logicalSize.width) × \(logicalSize.height) points")
         print("  Physical: \(physicalSize.width) × \(physicalSize.height) pixels")
         print("  Scale:    \(scaleFactor)x\n")
+        print("Try moving the window to a display with different DPI!")
         print("Close window or press Cmd+Q to exit.")
+
+        try app.run()
     }
 }
