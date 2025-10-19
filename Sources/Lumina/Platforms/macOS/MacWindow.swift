@@ -15,14 +15,14 @@ private final class MacWindowDelegate: NSObject, NSWindowDelegate {
     }
 }
 
-/// macOS implementation of WindowBackend using NSWindow.
+/// macOS implementation of PlatformWindow using NSWindow.
 ///
 /// This implementation wraps NSWindow and provides Lumina's cross-platform
 /// window interface. It handles coordinate system conversion (AppKit uses
 /// bottom-left origin, Lumina uses top-left), DPI scaling, and window state
 /// management.
 @MainActor
-internal struct MacWindow: WindowBackend {
+internal struct MacWindow: PlatformWindow {
     let id: WindowID
     private var nsWindow: NSWindow
     private var delegate: MacWindowDelegate
@@ -33,11 +33,13 @@ internal struct MacWindow: WindowBackend {
     ///   - title: Window title
     ///   - size: Initial logical size
     ///   - resizable: Whether the window can be resized by the user
+    ///   - monitor: Optional monitor to create the window on (uses primary if nil)
     /// - Returns: Result containing MacWindow or LuminaError
     internal static func create(
         title: String,
         size: LogicalSize,
-        resizable: Bool
+        resizable: Bool,
+        monitor: Monitor? = nil
     ) -> Result<MacWindow, LuminaError> {
         // Create content rect for the window
         let contentRect = NSRect(
@@ -67,7 +69,31 @@ internal struct MacWindow: WindowBackend {
         )
 
         nsWindow.title = title
-        nsWindow.center()  // Center on screen initially
+
+        // Position the window based on monitor parameter or center it
+        if let monitor = monitor {
+            // Position window on the specified monitor
+            let targetScreen = NSScreen.screens.first { screen in
+                // Match based on screen frame position
+                let screenFrame = screen.frame
+                let monitorPhysical = monitor.physicalPosition
+                return Int(screenFrame.origin.x) == monitorPhysical.x &&
+                       Int(screenFrame.origin.y) == monitorPhysical.y
+            } ?? NSScreen.main
+
+            if let screen = targetScreen {
+                // Position window on the target screen (offset from screen's origin)
+                let screenFrame = screen.frame
+                let windowFrame = nsWindow.frame
+                let x = screenFrame.origin.x + 100
+                let y = screenFrame.origin.y + screenFrame.height - windowFrame.height - 100
+                nsWindow.setFrameOrigin(NSPoint(x: x, y: y))
+            } else {
+                nsWindow.center()
+            }
+        } else {
+            nsWindow.center()  // Center on screen initially
+        }
 
         // Enable automatic background color (system-appropriate)
         nsWindow.backgroundColor = .windowBackgroundColor

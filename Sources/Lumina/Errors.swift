@@ -59,11 +59,22 @@ public enum LuminaError: Error, Sendable {
     /// - Graphics system initialization failures
     /// - DPI awareness configuration errors
     /// - Display connection issues
+    /// - Monitor enumeration failures
     ///
     /// - Parameters:
+    ///   - platform: The platform where the error occurred (e.g., "Windows", "macOS")
+    ///   - operation: The operation that failed (e.g., "EnumDisplayMonitors")
     ///   - code: Platform-specific error code (e.g., NSError code, Win32 GetLastError)
-    ///   - message: Human-readable error description
-    case platformError(code: Int, message: String)
+    ///   - message: Optional human-readable error description
+    case platformError(platform: String, operation: String, code: Int, message: String? = nil)
+
+    /// The requested operation is not supported on this platform.
+    ///
+    /// This error occurs when attempting to use a feature that hasn't been
+    /// implemented for the current platform.
+    ///
+    /// - Parameter operation: The operation that is not supported
+    case platformNotSupported(operation: String)
 
     /// Invalid API usage or state.
     ///
@@ -98,8 +109,14 @@ extension LuminaError: CustomStringConvertible {
         switch self {
         case .windowCreationFailed(let reason):
             return "Window creation failed: \(reason)"
-        case .platformError(let code, let message):
-            return "Platform error [\(code)]: \(message)"
+        case .platformError(let platform, let operation, let code, let message):
+            if let message = message {
+                return "\(platform) error in \(operation) [\(code)]: \(message)"
+            } else {
+                return "\(platform) error in \(operation) [\(code)]"
+            }
+        case .platformNotSupported(let operation):
+            return "Operation not supported on this platform: \(operation)"
         case .invalidState(let message):
             return "Invalid state: \(message)"
         case .eventLoopFailed(let reason):

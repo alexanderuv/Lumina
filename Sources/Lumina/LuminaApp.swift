@@ -3,10 +3,13 @@
 /// Conform your application struct to this protocol and mark it with @main
 /// to create a Lumina application, similar to SwiftUI's App protocol.
 ///
+/// The simplest way is to use the platform-provided `PlatformBackend` type,
+/// which automatically conforms to LuminaApp:
+///
 /// Example:
 /// ```swift
 /// @main
-/// struct HelloWorld: LuminaApp {
+/// extension PlatformBackend {
 ///     func configure() throws {
 ///         var window = try Window.create(
 ///             title: "Hello, World!",
@@ -55,15 +58,32 @@ public extension LuminaApp {
     ///
     /// This is automatically called by the Swift runtime when your app struct
     /// is marked with @main. Do not call this manually.
-    static func main() async throws {
-        // Create instance of the app
-        let appInstance = Self.init()
+    ///
+    /// Execution order:
+    /// 1. Create app instance (platform init happens in init() - DPI awareness, COM, etc.)
+    /// 2. Call configure() (create windows - DPI is already set)
+    /// 3. Run event loop (process events until quit)
+    static func main() async {
+        do {
+            // Create instance of the app
+            // Platform initialization (DPI awareness, COM, etc.) happens HERE in init()
+            let app = Self.init()
+            var platformApp = try PlatformBackend()
 
-        // Call configure
-        try await appInstance.configure()
+            // Call configure to set up windows
+            // DPI is already set at this point
+            try await app.configure()
 
-        // Create and run the event loop
-        var application = try Application()
-        try application.run()
+            // Run the event loop
+            try platformApp.run()
+        } catch {
+            // Handle initialization or runtime errors
+            // Print detailed error information for debugging
+            print("Fatal error: \(error)")
+            print("Error type: \(type(of: error))")
+
+            // Terminate with clear error message
+            fatalError("Lumina initialization failed: \(error)")
+        }
     }
 }

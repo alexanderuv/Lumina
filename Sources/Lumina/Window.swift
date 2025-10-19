@@ -54,34 +54,49 @@ public struct Window: ~Copyable {
     /// - Windows: Creates HWND with CreateWindowEx
     /// - Both platforms respect DPI scaling automatically
     ///
+    /// Monitor Selection:
+    /// - If monitor is specified, the window will be created on that monitor
+    /// - If monitor is nil (default), the primary monitor is used
+    /// - The window's DPI scaling is automatically adjusted to match the target monitor
+    ///
     /// - Parameters:
     ///   - title: Window title displayed in the title bar
     ///   - size: Initial logical size of the window's content area
     ///   - resizable: Whether the window can be resized by the user (default: true)
+    ///   - monitor: The monitor to create the window on (default: nil for primary)
     ///
     /// - Returns: Result containing Window or LuminaError
     ///
     /// Example:
     /// ```swift
+    /// // Create window on primary monitor
     /// let window = try Window.create(
     ///     title: "Hello, Lumina!",
-    ///     size: LogicalSize(width: 800, height: 600),
-    ///     resizable: true
+    ///     size: LogicalSize(width: 800, height: 600)
     /// ).get()
-    /// window.show()
+    ///
+    /// // Create window on specific monitor
+    /// let monitors = try Monitor.all()
+    /// let secondMonitor = monitors[1]
+    /// let window2 = try Window.create(
+    ///     title: "Second Window",
+    ///     size: LogicalSize(width: 800, height: 600),
+    ///     monitor: secondMonitor
+    /// ).get()
     /// ```
     public static func create(
         title: String,
         size: LogicalSize,
-        resizable: Bool = true
+        resizable: Bool = true,
+        monitor: Monitor? = nil
     ) -> Result<Window, LuminaError> {
         #if os(macOS)
-        return MacWindow.create(title: title, size: size, resizable: resizable)
+        return MacWindow.create(title: title, size: size, resizable: resizable, monitor: monitor)
             .map { macWindow in
                 Window(id: macWindow.id, backend: macWindow)
             }
         #elseif os(Windows)
-        return WinWindow.create(title: title, size: size, resizable: resizable)
+        return WinWindow.create(title: title, size: size, resizable: resizable, monitor: monitor)
             .map { winWindow in
                 Window(id: winWindow.id, backend: winWindow)
             }

@@ -1,5 +1,7 @@
 #if os(macOS)
 import AppKit
+#elseif os(Windows)
+import WinSDK
 #endif
 
 /// System cursor appearance and visibility control.
@@ -105,8 +107,28 @@ public struct Cursor {
         }
         nsCursor.set()
         #elseif os(Windows)
-        // Windows cursor implementation
-        // SetCursor(LoadCursor(NULL, cursor.toWindowsID()))
+        // Map SystemCursor to Windows cursor resource ID
+        let cursorID: UInt16 = switch cursor {
+        case .arrow:
+            32512  // IDC_ARROW
+        case .ibeam:
+            32513  // IDC_IBEAM
+        case .crosshair:
+            32515  // IDC_CROSS
+        case .hand:
+            32649  // IDC_HAND
+        case .resizeNS:
+            32645  // IDC_SIZENS
+        case .resizeEW:
+            32644  // IDC_SIZEWE
+        case .resizeNESW:
+            32643  // IDC_SIZENESW
+        case .resizeNWSE:
+            32642  // IDC_SIZENWSE
+        }
+
+        let hCursor = LoadCursorW(nil, UnsafePointer<WCHAR>(bitPattern: Int(cursorID)))
+        SetCursor(hCursor)
         #endif
     }
 
@@ -134,7 +156,9 @@ public struct Cursor {
         #if os(macOS)
         NSCursor.hide()
         #elseif os(Windows)
-        // ShowCursor(FALSE)
+        while ShowCursor(false) >= 0 {
+            // ShowCursor is reference counted, keep calling until cursor is hidden
+        }
         #endif
     }
 
@@ -158,7 +182,9 @@ public struct Cursor {
         #if os(macOS)
         NSCursor.unhide()
         #elseif os(Windows)
-        // ShowCursor(TRUE)
+        while ShowCursor(true) < 0 {
+            // ShowCursor is reference counted, keep calling until cursor is shown
+        }
         #endif
     }
 }

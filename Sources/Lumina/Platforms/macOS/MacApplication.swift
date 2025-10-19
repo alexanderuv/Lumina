@@ -3,7 +3,7 @@ import AppKit
 import Foundation
 
 
-/// macOS implementation of EventLoopBackend using AppKit.
+/// macOS implementation of PlatformApp using AppKit.
 ///
 /// This implementation wraps NSApplication's event loop and provides
 /// Lumina's cross-platform event loop interface. It handles NSEvent
@@ -29,7 +29,7 @@ private final class UserEventQueue: @unchecked Sendable {
 }
 
 @MainActor
-internal struct MacApplication: EventLoopBackend {
+internal struct MacApplication: PlatformApp {
     private var shouldQuit: Bool = false
     private let userEventQueue = UserEventQueue()
 
