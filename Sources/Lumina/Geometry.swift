@@ -207,3 +207,45 @@ public struct PhysicalPosition: Sendable, Hashable {
         )
     }
 }
+
+/// Logical rectangle representing a region in device-independent coordinates.
+///
+/// LogicalRect combines a position and size to define a rectangular region
+/// in logical coordinates. This is commonly used for dirty rectangles in
+/// redraw events, monitor work areas, and window bounds.
+///
+/// Example:
+/// ```swift
+/// let rect = LogicalRect(
+///     origin: LogicalPosition(x: 10, y: 20),
+///     size: LogicalSize(width: 300, height: 200)
+/// )
+/// print("Rectangle from (\(rect.origin.x), \(rect.origin.y)) with size \(rect.size.width)×\(rect.size.height)")
+/// ```
+public struct LogicalRect: Sendable, Hashable {
+    /// The top-left corner of the rectangle
+    public let origin: LogicalPosition
+
+    /// The size of the rectangle
+    public let size: LogicalSize
+
+    /// Create a logical rectangle.
+    ///
+    /// - Parameters:
+    ///   - origin: The top-left corner position in logical coordinates
+    ///   - size: The size in logical coordinates
+    public init(origin: LogicalPosition, size: LogicalSize) {
+        self.origin = origin
+        self.size = size
+    }
+
+    /// The right edge x-coordinate.
+    public var maxX: Float {
+        origin.x + size.width
+    }
+
+    /// The bottom edge y-coordinate.
+    public var maxY: Float {
+        origin.y + size.height
+    }
+}

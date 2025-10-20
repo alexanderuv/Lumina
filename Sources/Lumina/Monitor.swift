@@ -29,6 +29,7 @@ public struct MonitorID: Sendable, Hashable, CustomStringConvertible {
 ///     print("Monitor: \(monitor.name)")
 ///     print("  Position: \(monitor.position)")
 ///     print("  Size: \(monitor.size)")
+///     print("  Work Area: \(monitor.workArea)")
 ///     print("  Scale: \(monitor.scaleFactor)x")
 /// }
 /// ```
@@ -44,6 +45,22 @@ public struct Monitor: Sendable, Hashable {
 
     /// Size of the monitor's display area (logical coordinates)
     public let size: LogicalSize
+
+    /// Usable work area excluding system UI (menu bars, taskbars, docks, etc.) in logical coordinates
+    ///
+    /// The work area represents the portion of the monitor where applications can place windows.
+    /// This excludes areas occupied by the operating system's UI elements like:
+    /// - macOS: Menu bar at top, Dock on sides
+    /// - Windows: Taskbar (usually at bottom)
+    /// - Linux: Panel bars (varies by desktop environment)
+    ///
+    /// Example:
+    /// ```swift
+    /// let monitor = try Monitor.primary()
+    /// print("Full size: \(monitor.size.width)×\(monitor.size.height)")
+    /// print("Work area: \(monitor.workArea.size.width)×\(monitor.workArea.size.height)")
+    /// ```
+    public let workArea: LogicalRect
 
     /// DPI scale factor (1.0 = 96 DPI, 1.5 = 144 DPI, 2.0 = 192 DPI, etc.)
     public let scaleFactor: Float
@@ -100,4 +117,42 @@ public struct Monitor: Sendable, Hashable {
         throw LuminaError.platformNotSupported(operation: "Monitor detection")
         #endif
     }
+}
+
+// MARK: - Global Monitor Functions
+
+/// Enumerate all available monitors.
+///
+/// This is a convenience function equivalent to `Monitor.all()`.
+///
+/// - Returns: Array of all detected monitors
+/// - Throws: LuminaError if monitor enumeration fails
+///
+/// Example:
+/// ```swift
+/// let monitors = try enumerateMonitors()
+/// for monitor in monitors {
+///     print("Monitor: \(monitor.name) at \(monitor.position)")
+/// }
+/// ```
+@MainActor
+public func enumerateMonitors() throws -> [Monitor] {
+    try Monitor.all()
+}
+
+/// Get the primary monitor.
+///
+/// This is a convenience function equivalent to `Monitor.primary()`.
+///
+/// - Returns: The primary monitor
+/// - Throws: LuminaError if no primary monitor is found
+///
+/// Example:
+/// ```swift
+/// let primary = try primaryMonitor()
+/// print("Primary monitor: \(primary.name), \(primary.size.width)×\(primary.size.height)")
+/// ```
+@MainActor
+public func primaryMonitor() throws -> Monitor {
+    try Monitor.primary()
 }

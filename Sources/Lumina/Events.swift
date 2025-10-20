@@ -29,6 +29,12 @@ public enum Event: Sendable {
 
     /// User-defined custom event
     case user(UserEvent)
+
+    /// Redraw request event
+    case redraw(RedrawEvent)
+
+    /// Monitor configuration change event
+    case monitor(MonitorEvent)
 }
 
 // MARK: - Window Events
@@ -385,4 +391,70 @@ public struct UserEvent: Sendable {
     public init<T: Sendable>(_ data: T) {
         self._data = data
     }
+}
+
+// MARK: - Redraw Events
+
+/// Redraw request events.
+///
+/// RedrawEvent notifies the application that a window needs to be redrawn.
+/// This can be triggered by the system (window exposed, resized) or by the
+/// application calling `requestRedraw()`.
+///
+/// Applications should respond to redraw events by rendering the window
+/// content. The optional dirty rectangle can be used for partial redraws
+/// to optimize performance.
+///
+/// Example:
+/// ```swift
+/// if case .redraw(.requested(let windowID, let dirtyRect)) = event {
+///     if let rect = dirtyRect {
+///         // Redraw only the dirty area
+///         renderPartial(windowID, rect: rect)
+///     } else {
+///         // Full window redraw
+///         renderFull(windowID)
+///     }
+/// }
+/// ```
+public enum RedrawEvent: Sendable, Hashable {
+    /// Window needs to be redrawn.
+    ///
+    /// This event is sent when the window's content needs to be refreshed,
+    /// either due to system events (window exposed, resized) or application
+    /// requests via `window.requestRedraw()`.
+    ///
+    /// - Parameters:
+    ///   - windowID: ID of the window that needs redrawing
+    ///   - dirtyRect: Optional rectangle specifying the damaged area in logical coordinates.
+    ///                If nil, the entire window should be redrawn.
+    case requested(WindowID, dirtyRect: LogicalRect?)
+}
+
+// MARK: - Monitor Events
+
+/// Monitor configuration change events.
+///
+/// MonitorEvent notifies the application when the system's monitor configuration
+/// changes. This includes monitors being connected/disconnected, resolution
+/// changes, or DPI scaling changes.
+///
+/// Applications should respond by re-querying monitor information using
+/// `enumerateMonitors()` and updating any monitor-dependent state.
+///
+/// Example:
+/// ```swift
+/// if case .monitor(.configurationChanged) = event {
+///     let monitors = try enumerateMonitors()
+///     print("Monitor configuration changed: \(monitors.count) monitor(s) detected")
+///     // Update fullscreen windows, reposition windows, etc.
+/// }
+/// ```
+public enum MonitorEvent: Sendable, Hashable {
+    /// Monitor configuration changed (connected/disconnected/resolution/DPI).
+    ///
+    /// This event is sent when the system's monitor configuration changes in
+    /// any way. Applications should re-query monitor information to get the
+    /// updated configuration.
+    case configurationChanged
 }

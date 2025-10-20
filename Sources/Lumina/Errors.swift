@@ -102,6 +102,100 @@ public enum LuminaError: Error, Sendable {
     ///
     /// - Parameter reason: Description of why the event loop failed
     case eventLoopFailed(reason: String)
+
+    /// Clipboard access was denied by the system.
+    ///
+    /// This error occurs when the application attempts to read or write clipboard
+    /// data but the operating system denies permission. This can happen due to:
+    /// - Sandbox restrictions
+    /// - Security policies
+    /// - Clipboard locked by another application
+    case clipboardAccessDenied
+
+    /// Reading from the clipboard failed.
+    ///
+    /// This error occurs when clipboard read operations fail for reasons other
+    /// than access denial. Common causes include:
+    /// - Clipboard data corruption
+    /// - Unsupported data format
+    /// - Platform-specific clipboard errors
+    ///
+    /// - Parameter reason: Description of why the read failed
+    case clipboardReadFailed(reason: String)
+
+    /// Writing to the clipboard failed.
+    ///
+    /// This error occurs when clipboard write operations fail for reasons other
+    /// than access denial. Common causes include:
+    /// - Insufficient memory to allocate clipboard data
+    /// - Platform-specific clipboard errors
+    /// - Clipboard system unavailable
+    ///
+    /// - Parameter reason: Description of why the write failed
+    case clipboardWriteFailed(reason: String)
+
+    /// Monitor enumeration failed.
+    ///
+    /// This error occurs when the system cannot enumerate connected monitors.
+    /// Common causes include:
+    /// - Display server connection issues (Linux X11/Wayland)
+    /// - Corrupted display configuration
+    /// - Platform-specific monitor query failures
+    ///
+    /// - Parameter reason: Description of why enumeration failed
+    case monitorEnumerationFailed(reason: String)
+
+    /// The requested feature is not supported on this platform.
+    ///
+    /// This error occurs when attempting to use a platform-specific feature
+    /// that is unavailable on the current platform. Unlike `platformNotSupported`,
+    /// this indicates the feature exists but is platform-dependent.
+    ///
+    /// Examples:
+    /// - X11 transparency (requires ARGB visual, rarely available)
+    /// - Wayland always-on-top (no standard protocol)
+    /// - Linux window decoration toggle on specific compositors
+    ///
+    /// Use capability queries to avoid this error:
+    /// ```swift
+    /// let caps = window.capabilities()
+    /// if caps.supportsTransparency {
+    ///     try window.setTransparent(true)
+    /// } else {
+    ///     // Feature unavailable, use fallback
+    /// }
+    /// ```
+    ///
+    /// - Parameter feature: The feature name (e.g., "transparency", "always-on-top")
+    case unsupportedPlatformFeature(feature: String)
+
+    /// Required Wayland protocol is missing.
+    ///
+    /// This error occurs on Linux Wayland systems when a required protocol
+    /// is not advertised by the compositor. Essential protocols like xdg-shell
+    /// are required for basic windowing functionality.
+    ///
+    /// Common causes:
+    /// - Compositor is too old (missing protocol version)
+    /// - Non-standard compositor implementation
+    /// - Compositor bug or misconfiguration
+    ///
+    /// - Parameter protocol: The missing protocol name (e.g., "xdg-shell", "xdg-decoration")
+    case waylandProtocolMissing(protocol: String)
+
+    /// Required X11 extension is missing.
+    ///
+    /// This error occurs on Linux X11 systems when a required X11 extension
+    /// is not available. Some extensions are critical for proper DPI handling
+    /// or input event processing.
+    ///
+    /// Common causes:
+    /// - X server is too old
+    /// - Extension not compiled into X server
+    /// - Extension disabled in X server configuration
+    ///
+    /// - Parameter extension: The missing extension name (e.g., "RANDR", "XInput2")
+    case x11ExtensionMissing(extension: String)
 }
 
 extension LuminaError: CustomStringConvertible {
@@ -121,6 +215,20 @@ extension LuminaError: CustomStringConvertible {
             return "Invalid state: \(message)"
         case .eventLoopFailed(let reason):
             return "Event loop failed: \(reason)"
+        case .clipboardAccessDenied:
+            return "Clipboard access denied by the system"
+        case .clipboardReadFailed(let reason):
+            return "Clipboard read failed: \(reason)"
+        case .clipboardWriteFailed(let reason):
+            return "Clipboard write failed: \(reason)"
+        case .monitorEnumerationFailed(let reason):
+            return "Monitor enumeration failed: \(reason)"
+        case .unsupportedPlatformFeature(let feature):
+            return "Feature '\(feature)' is not supported on this platform"
+        case .waylandProtocolMissing(let protocol):
+            return "Required Wayland protocol '\(protocol)' is missing"
+        case .x11ExtensionMissing(let extension):
+            return "Required X11 extension '\(extension)' is missing"
         }
     }
 }

@@ -108,6 +108,69 @@ public protocol LuminaApp: Sendable {
     /// - Throws: `LuminaError.eventLoopFailed` if wait fails
     mutating func wait() throws
 
+    /// Pump events with specified control flow mode.
+    ///
+    /// This is the core event processing method that supports different control flow modes:
+    /// - `.wait`: Block until an event arrives (efficient for UI apps)
+    /// - `.poll`: Return immediately with any pending events (efficient for games)
+    /// - `.waitUntil(deadline)`: Block with timeout (efficient for animations)
+    ///
+    /// The run(), poll(), and wait() methods are convenience wrappers around pumpEvents().
+    ///
+    /// Example:
+    /// ```swift
+    /// // Game loop with 60fps frame pacing
+    /// loop {
+    ///     let deadline = Deadline(seconds: 1.0 / 60.0)
+    ///     while let event = app.pumpEvents(mode: .waitUntil(deadline)) {
+    ///         handleEvent(event)
+    ///     }
+    ///     render()
+    /// }
+    ///
+    /// // UI application: block until events
+    /// while let event = app.pumpEvents(mode: .wait) {
+    ///     handleEvent(event)
+    /// }
+    /// ```
+    ///
+    /// - Parameter mode: The control flow mode (default: .wait)
+    /// - Returns: The next event, or nil if no events are available
+    /// - Throws: `LuminaError.eventLoopFailed` if event processing fails
+    mutating func pumpEvents(mode: ControlFlowMode) -> Event?
+
+    /// Query monitor capabilities for the current platform.
+    ///
+    /// Returns information about which monitor-related features are supported,
+    /// such as dynamic refresh rates (ProMotion) or fractional DPI scaling.
+    ///
+    /// Example:
+    /// ```swift
+    /// let caps = LuminaApp.monitorCapabilities()
+    /// if caps.supportsDynamicRefreshRate {
+    ///     print("Platform supports variable refresh rate")
+    /// }
+    /// ```
+    ///
+    /// - Returns: MonitorCapabilities struct describing platform support
+    static func monitorCapabilities() -> MonitorCapabilities
+
+    /// Query clipboard capabilities for the current platform.
+    ///
+    /// Returns information about which clipboard data types are supported
+    /// on this platform (text, images, HTML, etc.).
+    ///
+    /// Example:
+    /// ```swift
+    /// let caps = LuminaApp.clipboardCapabilities()
+    /// if caps.supportsText {
+    ///     try Clipboard.writeText("Hello!")
+    /// }
+    /// ```
+    ///
+    /// - Returns: ClipboardCapabilities struct describing platform support
+    static func clipboardCapabilities() -> ClipboardCapabilities
+
     /// Post a user-defined event to the event queue (thread-safe).
     ///
     /// This method is thread-safe and allows background threads to communicate

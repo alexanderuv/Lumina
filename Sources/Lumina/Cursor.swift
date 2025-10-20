@@ -4,63 +4,50 @@ import AppKit
 import WinSDK
 #endif
 
-/// System cursor appearance and visibility control.
+/// Protocol for cursor appearance and visibility control.
 ///
-/// Cursor provides a cross-platform API for changing the mouse cursor
-/// appearance and visibility. In Milestone 0, only system cursors are
-/// supported; custom cursor images will be added in a future milestone.
+/// LuminaCursor provides a unified interface for changing the mouse cursor
+/// appearance and visibility. Get a cursor instance from a window via
+/// `window.cursor()`.
 ///
-/// All cursor operations are global (affect the entire system) and must
-/// be called from the main thread.
+/// This replaces the previous static Cursor API with a protocol-based design
+/// that aligns with Lumina's architectural patterns.
 ///
-/// Thread Safety: All Cursor methods must be called from the main thread.
+/// Thread Safety: All cursor methods must be called from the main thread.
 /// The @MainActor annotation enforces this at compile time.
+///
+/// Migration from Milestone 0:
+/// ```swift
+/// // Old API (Milestone 0):
+/// Cursor.set(.hand)
+/// Cursor.hide()
+/// Cursor.show()
+///
+/// // New API (Milestone 1+):
+/// let cursor = window.cursor()
+/// cursor.set(.hand)
+/// cursor.hide()
+/// cursor.show()
+/// ```
 ///
 /// Example:
 /// ```swift
+/// let cursor = window.cursor()
+///
 /// // Change cursor to hand when hovering over button
-/// Cursor.set(.hand)
+/// cursor.set(.hand)
 ///
 /// // Change cursor to I-beam for text input
-/// Cursor.set(.ibeam)
+/// cursor.set(.ibeam)
 ///
-/// // Restore default cursor
-/// Cursor.set(.arrow)
+/// // Hide cursor during fullscreen video
+/// cursor.hide()
+///
+/// // Restore cursor visibility
+/// cursor.show()
 /// ```
 @MainActor
-public struct Cursor {
-    // Cursor has no instance state; all methods are static
-
-    /// Standard system cursor types.
-    ///
-    /// These cursor shapes are provided by the operating system and
-    /// have consistent appearance across the platform.
-    public enum SystemCursor: Sendable {
-        /// Default arrow pointer
-        case arrow
-
-        /// I-beam for text selection
-        case ibeam
-
-        /// Crosshair for precision selection
-        case crosshair
-
-        /// Pointing hand for clickable items
-        case hand
-
-        /// Vertical resize cursor (north-south)
-        case resizeNS
-
-        /// Horizontal resize cursor (east-west)
-        case resizeEW
-
-        /// Diagonal resize cursor (northeast-southwest)
-        case resizeNESW
-
-        /// Diagonal resize cursor (northwest-southeast)
-        case resizeNWSE
-    }
-
+public protocol LuminaCursor: Sendable {
     /// Set the current cursor appearance.
     ///
     /// Changes the system cursor to the specified shape. The cursor remains
@@ -69,68 +56,22 @@ public struct Cursor {
     /// Platform Notes:
     /// - macOS: Uses NSCursor standard cursors
     /// - Windows: Uses LoadCursor with system cursor IDs
+    /// - Linux X11: Uses Xcursor library
+    /// - Linux Wayland: Uses cursor-shape-v1 protocol
     ///
     /// - Parameter cursor: The cursor shape to display
     ///
     /// Example:
     /// ```swift
+    /// let cursor = window.cursor()
     /// // Show hand cursor when hovering over link
     /// if mouseOverLink {
-    ///     Cursor.set(.hand)
+    ///     cursor.set(.hand)
     /// } else {
-    ///     Cursor.set(.arrow)
+    ///     cursor.set(.arrow)
     /// }
     /// ```
-    public static func set(_ cursor: SystemCursor) {
-        #if os(macOS)
-        let nsCursor: NSCursor = switch cursor {
-        case .arrow:
-            .arrow
-        case .ibeam:
-            .iBeam
-        case .crosshair:
-            .crosshair
-        case .hand:
-            .pointingHand
-        case .resizeNS:
-            .resizeUpDown
-        case .resizeEW:
-            .resizeLeftRight
-        case .resizeNESW:
-            // macOS doesn't have specific diagonal resize cursors
-            // Use closest approximation
-            .arrow
-        case .resizeNWSE:
-            // macOS doesn't have specific diagonal resize cursors
-            // Use closest approximation
-            .arrow
-        }
-        nsCursor.set()
-        #elseif os(Windows)
-        // Map SystemCursor to Windows cursor resource ID
-        let cursorID: UInt16 = switch cursor {
-        case .arrow:
-            32512  // IDC_ARROW
-        case .ibeam:
-            32513  // IDC_IBEAM
-        case .crosshair:
-            32515  // IDC_CROSS
-        case .hand:
-            32649  // IDC_HAND
-        case .resizeNS:
-            32645  // IDC_SIZENS
-        case .resizeEW:
-            32644  // IDC_SIZEWE
-        case .resizeNESW:
-            32643  // IDC_SIZENESW
-        case .resizeNWSE:
-            32642  // IDC_SIZENWSE
-        }
-
-        let hCursor = LoadCursorW(nil, UnsafePointer<WCHAR>(bitPattern: Int(cursorID)))
-        SetCursor(hCursor)
-        #endif
-    }
+    func set(_ cursor: SystemCursor)
 
     /// Hide the cursor.
     ///
@@ -140,51 +81,71 @@ public struct Cursor {
     /// during certain operations (e.g., video playback).
     ///
     /// Platform Notes:
-    /// - Multiple hide() calls stack; call show() the same number of times
+    /// - Multiple hide() calls may stack; call show() the same number of times
     /// - macOS: Uses [NSCursor hide]
     /// - Windows: Uses ShowCursor(FALSE)
+    /// - Linux: Platform-specific cursor visibility control
     ///
     /// Example:
     /// ```swift
+    /// let cursor = window.cursor()
     /// // Hide cursor during fullscreen video
-    /// Cursor.hide()
+    /// cursor.hide()
     ///
     /// // Later, restore cursor
-    /// Cursor.show()
+    /// cursor.show()
     /// ```
-    public static func hide() {
-        #if os(macOS)
-        NSCursor.hide()
-        #elseif os(Windows)
-        while ShowCursor(false) >= 0 {
-            // ShowCursor is reference counted, keep calling until cursor is hidden
-        }
-        #endif
-    }
+    func hide()
 
     /// Show the cursor.
     ///
     /// Makes the cursor visible if it was previously hidden. If hide() was
-    /// called multiple times, show() must be called the same number of times
-    /// to make the cursor visible.
+    /// called multiple times, show() may need to be called the same number
+    /// of times to make the cursor visible (platform-dependent).
     ///
     /// Platform Notes:
-    /// - hide()/show() calls are reference counted
+    /// - hide()/show() calls may be reference counted on some platforms
     /// - macOS: Uses [NSCursor unhide]
     /// - Windows: Uses ShowCursor(TRUE)
+    /// - Linux: Platform-specific cursor visibility control
     ///
     /// Example:
     /// ```swift
+    /// let cursor = window.cursor()
     /// // Show cursor after hiding
-    /// Cursor.show()
+    /// cursor.show()
     /// ```
-    public static func show() {
-        #if os(macOS)
-        NSCursor.unhide()
-        #elseif os(Windows)
-        while ShowCursor(true) < 0 {
-            // ShowCursor is reference counted, keep calling until cursor is shown
-        }
-        #endif
-    }
+    func show()
+}
+
+/// Standard system cursor types.
+///
+/// These cursor shapes are provided by the operating system and
+/// have consistent appearance across the platform. In Milestone 0,
+/// only system cursors are supported; custom cursor images will be
+/// added in a future milestone.
+public enum SystemCursor: Sendable {
+    /// Default arrow pointer
+    case arrow
+
+    /// I-beam for text selection
+    case ibeam
+
+    /// Crosshair for precision selection
+    case crosshair
+
+    /// Pointing hand for clickable items
+    case hand
+
+    /// Vertical resize cursor (north-south)
+    case resizeNS
+
+    /// Horizontal resize cursor (east-west)
+    case resizeEW
+
+    /// Diagonal resize cursor (northeast-southwest)
+    case resizeNESW
+
+    /// Diagonal resize cursor (northwest-southeast)
+    case resizeNWSE
 }

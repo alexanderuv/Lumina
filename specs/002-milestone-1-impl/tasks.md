@@ -15,7 +15,7 @@
 ## Phase 1: Core Type Extensions (Foundation Layer)
 
 ### Event System Extensions
-- [ ] **T001** [P] Extend Event enum with RedrawEvent and MonitorEvent cases in `Sources/Lumina/Core/Events.swift`
+- [X] **T001** [P] Extend Event enum with RedrawEvent and MonitorEvent cases in `Sources/Lumina/Core/Events.swift`
   - Add `case redraw(RedrawEvent)` and `case monitor(MonitorEvent)`
   - Implement RedrawEvent enum: `case requested(WindowID, dirtyRect: LogicalRect?)`
   - Implement MonitorEvent enum: `case configurationChanged`
@@ -23,13 +23,13 @@
   - Add pattern matching support for new event types
 
 ### Control Flow & Geometry
-- [ ] **T002** [P] Create ControlFlowMode enum in new file `Sources/Lumina/Core/ControlFlowMode.swift`
+- [X] **T002** [P] Create ControlFlowMode enum in new file `Sources/Lumina/Core/ControlFlowMode.swift`
   - Implement enum: `case wait`, `case poll`, `case waitUntil(Deadline)`
   - Implement `Deadline` struct with `init(seconds:)` and `init(date:)`
   - Add `hasExpired` computed property
   - Mark all types as Sendable
 
-- [ ] **T003** [P] Extend Monitor with full API in `Sources/Lumina/Core/Monitor.swift`
+- [X] **T003** [P] Extend Monitor with full API in `Sources/Lumina/Core/Monitor.swift`
   - Keep existing MonitorID struct
   - Add LogicalRect struct: `init(origin: LogicalPosition, size: LogicalSize)`
   - Extend Monitor struct with full properties: id, name, position, size, workArea, scaleFactor, isPrimary
