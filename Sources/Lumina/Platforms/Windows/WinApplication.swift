@@ -46,6 +46,9 @@ private final class UserEventQueue: @unchecked Sendable {
     }
 }
 
+/// Thread-safe window event queue (removed - using GlobalEventQueue in WinWindow.swift)
+/// This class is no longer needed as we removed the duplicate WindowEventQueue
+
 // Custom message ID for user events (WM_USER + 1)
 private let WM_LUMINA_USER_EVENT: UINT = UINT(WM_USER + 1)
 
@@ -59,7 +62,7 @@ private let WM_LUMINA_USER_EVENT: UINT = UINT(WM_USER + 1)
 struct WinApplication: LuminaApp {
     private var shouldQuit: Bool = false
     private let userEventQueue = UserEventQueue()
-    private var windowRegistry = WindowRegistry<HWND>()  // HWND -> WindowID
+    // Note: Window tracking is handled by WinWindowRegistry in WinWindow.swift
     private var onWindowClosed: WindowCloseCallback?
 
     /// The main thread ID - captured at init time for thread-safe postUserEvent
@@ -114,29 +117,38 @@ struct WinApplication: LuminaApp {
     }
 
     mutating func poll() throws -> Event? {
-        // Loop until we find a translatable event or run out of events
+        // First, check if we have any queued events from WndProc
+        if let event = GlobalEventQueue.shared.removeFirst() {
+            return event
+        }
+
+        // Process Windows messages until we get an event or run out of messages
         while true {
             // Non-blocking message pump
             var msg = MSG()
 
             guard PeekMessageW(&msg, nil, 0, 0, UINT(PM_REMOVE)) else {
-                // No messages available
-                return nil
+                // No messages available, check queue one more time
+                return GlobalEventQueue.shared.removeFirst()
             }
 
             TranslateMessage(&msg)
             DispatchMessageW(&msg)
 
-            // TODO: Translate Windows messages to Lumina events
-            // For now, just process messages without returning events
-            // Full implementation requires WinInput translation similar to MacInput
-
             // Check for user events
             if msg.message == WM_LUMINA_USER_EVENT {
-                return pollUserEvent()
+                // Check if user event is in queue, otherwise return nil
+                if let userEvent = pollUserEvent() {
+                    return userEvent
+                }
             }
 
-            // Continue looping to check for the next message
+            // After processing messages, check if WndProc queued any events
+            if let event = GlobalEventQueue.shared.removeFirst() {
+                return event
+            }
+
+            // Continue looping to process more messages
         }
     }
 
@@ -185,11 +197,42 @@ struct WinApplication: LuminaApp {
         size: LogicalSize,
         resizable: Bool,
         monitor: Monitor?
-    ) -> Result<PlatformWindow, LuminaError> {
-        // TODO: Implement window creation with Win32 API
-        // This requires WinWindow.create() to accept closeCallback parameter
-        // and registration similar to MacApplication
-        fatalError("Windows createWindow not yet implemented")
+    ) -> Result<LuminaWindow, LuminaError> {
+        // Capture values for the close callback
+        let threadId = mainThreadId
+        let shouldExitOnLastWindow = exitOnLastWindowClosed
+
+        // Create the window using WinWindow
+        let result = WinWindow.create(
+            title: title,
+            size: size,
+            resizable: resizable,
+            monitor: monitor,
+            closeCallback: { [onWindowClosed] windowID in
+                // Note: WinWindowRegistry.unregister() is already called by WndProc on WM_DESTROY
+                // So we don't need to unregister here
+
+                // Post a window closed event for custom event loops
+                GlobalEventQueue.shared.append(.window(.closed(windowID)))
+
+                // Wake up the event loop by posting a user event
+                PostThreadMessageW(threadId, WM_LUMINA_USER_EVENT, 0, 0)
+
+                // Trigger the application's close callback
+                onWindowClosed?(windowID)
+
+                // Check if we should quit (after the callbacks)
+                // WinWindowRegistry already tracks window count
+                if shouldExitOnLastWindow && WinWindowRegistry.shared.windowCount == 0 {
+                    PostQuitMessage(0)
+                }
+            }
+        )
+
+        // Note: Window is registered in WinWindowRegistry by WinWindow.create()
+        // No need for duplicate tracking here
+
+        return result.map { $0 as LuminaWindow }
     }
 
     mutating func setWindowCloseCallback(_ callback: @escaping WindowCloseCallback) {

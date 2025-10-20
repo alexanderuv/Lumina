@@ -2,7 +2,11 @@
 description: Commit all changes (new/modified files).
 ---
 
-Commit all (new/modified) files. Don't use banners. Format:
+Commit all (new/modified) files. 
+Make a short list of the main 2-3 achievements. NO MORE than that.
+DON'T USE BANNERS
+
+Format:
 
 ```
 [<Current Milestone>] <short description>

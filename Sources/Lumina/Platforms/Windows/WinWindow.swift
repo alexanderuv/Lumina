@@ -2,34 +2,82 @@
 import WinSDK
 import Foundation
 
+/// Global event queue for posting events from WndProc to the application.
+///
+/// Since WndProc is a static C callback, we need a global queue to communicate
+/// events back to the application's poll() method.
+internal final class GlobalEventQueue: @unchecked Sendable {
+    static let shared = GlobalEventQueue()
+
+    private let lock = NSLock()
+    private var events: [Event] = []
+
+    func append(_ event: Event) {
+        lock.lock()
+        defer { lock.unlock() }
+        events.append(event)
+    }
+
+    func removeFirst() -> Event? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !events.isEmpty else { return nil }
+        return events.removeFirst()
+    }
+}
+
 /// Global window registry for HWND -> WindowID mapping.
 ///
 /// Windows requires a static C callback for WndProc, but we need to associate
 /// each HWND with its Lumina WindowID. This registry provides that mapping.
-private final class WindowRegistry: @unchecked Sendable {
-    static let shared = WindowRegistry()
+internal final class WinWindowRegistry: @unchecked Sendable {
+    static let shared = WinWindowRegistry()
 
     private let lock = NSLock()
     private var registry: [HWND: WindowID] = [:]
     private var constraints: [HWND: WindowConstraints] = [:]
+    private var closeCallbacks: [HWND: WindowCloseCallback] = [:]
 
     struct WindowConstraints {
         var minSize: LogicalSize?
         var maxSize: LogicalSize?
     }
 
-    func register(hwnd: HWND, windowID: WindowID) {
+    func register(hwnd: HWND, windowID: WindowID, closeCallback: WindowCloseCallback?) {
         lock.lock()
         defer { lock.unlock() }
         registry[hwnd] = windowID
         constraints[hwnd] = WindowConstraints()
+        if let callback = closeCallback {
+            closeCallbacks[hwnd] = callback
+        }
     }
 
     func unregister(hwnd: HWND) {
         lock.lock()
         defer { lock.unlock() }
+
+        // Get the callback and windowID before removing
+        let callback = closeCallbacks[hwnd]
+        let windowID = registry[hwnd]
+
         registry.removeValue(forKey: hwnd)
         constraints.removeValue(forKey: hwnd)
+        closeCallbacks.removeValue(forKey: hwnd)
+
+        // Release the lock before invoking the callback
+        lock.unlock()
+
+        // Invoke the close callback if it exists
+        // WndProc runs on the main thread, so we can use assumeIsolated
+        if let callback = callback, let windowID = windowID {
+            MainActor.assumeIsolated {
+                callback(windowID)
+            }
+        }
+
+        // Re-acquire the lock for the defer block
+        lock.lock()
     }
 
     func windowID(for hwnd: HWND) -> WindowID? {
@@ -54,6 +102,12 @@ private final class WindowRegistry: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return constraints[hwnd]
+    }
+
+    var windowCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return registry.count
     }
 }
 
@@ -108,9 +162,9 @@ private func luminaWndProc(
         return DefWindowProcW(hwnd, uMsg, wParam, lParam)
 
     case UINT(WM_DESTROY):
-        WindowRegistry.shared.unregister(hwnd: hwnd)
-        // Post quit message to terminate the application
-        PostQuitMessage(0)
+        WinWindowRegistry.shared.unregister(hwnd: hwnd)
+        // Note: Don't call PostQuitMessage here - let the close callback decide
+        // whether to quit based on exitOnLastWindowClosed setting
         return 0
 
     case UINT(WM_CLOSE):
@@ -120,7 +174,7 @@ private func luminaWndProc(
         return 0
 
     case UINT(WM_GETMINMAXINFO):
-        if let constraints = WindowRegistry.shared.getConstraints(for: hwnd) {
+        if let constraints = WinWindowRegistry.shared.getConstraints(for: hwnd) {
             // lParam contains pointer to MINMAXINFO structure
             let pMinMaxInfo = UnsafeMutablePointer<MINMAXINFO>(bitPattern: Int(truncatingIfNeeded: lParam))
             if let info = pMinMaxInfo {
@@ -161,9 +215,10 @@ private func luminaWndProc(
         }
 
         // Still translate the event for application notification
-        if let windowID = WindowRegistry.shared.windowID(for: hwnd) {
+        if let windowID = WinWindowRegistry.shared.windowID(for: hwnd) {
             if let event = translateWindowsMessage(msg: uMsg, wParam: wParam, lParam: lParam, for: windowID) {
-                _ = event
+                // Post event to global queue for poll() to retrieve
+                GlobalEventQueue.shared.append(event)
             }
         }
         return 0
@@ -195,11 +250,10 @@ private func luminaWndProc(
 
     default:
         // Translate other events through WinInput
-        if let windowID = WindowRegistry.shared.windowID(for: hwnd) {
+        if let windowID = WinWindowRegistry.shared.windowID(for: hwnd) {
             if let event = translateWindowsMessage(msg: uMsg, wParam: wParam, lParam: lParam, for: windowID) {
-                // In Milestone 0, we don't have a callback mechanism yet
-                // Events will be handled in a future milestone
-                _ = event
+                // Post event to global queue for poll() to retrieve
+                GlobalEventQueue.shared.append(event)
             }
         }
     }
@@ -207,13 +261,13 @@ private func luminaWndProc(
     return DefWindowProcW(hwnd, uMsg, wParam, lParam)
 }
 
-/// Windows implementation of PlatformWindow using HWND.
+/// Windows implementation of LuminaWindow using HWND.
 ///
 /// This implementation wraps a Windows window handle (HWND) and provides
 /// Lumina's cross-platform window interface. It handles DPI scaling,
 /// window styles, and Win32 API calls.
 @MainActor
-internal struct WinWindow: PlatformWindow {
+internal struct WinWindow: LuminaWindow {
     let id: WindowID
     private var hwnd: HWND?
 
@@ -224,12 +278,14 @@ internal struct WinWindow: PlatformWindow {
     ///   - size: Initial logical size
     ///   - resizable: Whether the window can be resized by the user
     ///   - monitor: Optional monitor to create the window on (uses primary if nil)
+    ///   - closeCallback: Optional callback to invoke when the window closes
     /// - Returns: Result containing WinWindow or LuminaError
     static func create(
         title: String,
         size: LogicalSize,
         resizable: Bool,
-        monitor: Monitor? = nil
+        monitor: Monitor? = nil,
+        closeCallback: WindowCloseCallback? = nil
     ) -> Result<WinWindow, LuminaError> {
         // Register window class on first call
         if !windowClassRegistered {
@@ -365,7 +421,7 @@ internal struct WinWindow: PlatformWindow {
         UpdateWindow(validHwnd)
 
         let windowID = WindowID()
-        WindowRegistry.shared.register(hwnd: validHwnd, windowID: windowID)
+        WinWindowRegistry.shared.register(hwnd: validHwnd, windowID: windowID, closeCallback: closeCallback)
 
         return .success(WinWindow(id: windowID, hwnd: validHwnd))
     }
@@ -480,12 +536,12 @@ internal struct WinWindow: PlatformWindow {
 
     mutating func setMinSize(_ size: borrowing LogicalSize?) {
         guard let hwnd = hwnd else { return }
-        WindowRegistry.shared.setMinSize(size, for: hwnd)
+        WinWindowRegistry.shared.setMinSize(size, for: hwnd)
     }
 
     mutating func setMaxSize(_ size: borrowing LogicalSize?) {
         guard let hwnd = hwnd else { return }
-        WindowRegistry.shared.setMaxSize(size, for: hwnd)
+        WinWindowRegistry.shared.setMaxSize(size, for: hwnd)
     }
 
     mutating func requestFocus() {
