@@ -36,6 +36,7 @@ Milestone 1 extends Lumina's cross-platform windowing framework to Linux (X11 an
 ## Technical Context
 **Language/Version**: Swift 6.2+ (strict concurrency, borrowing ownership model)
 **Primary Dependencies**:
+- Cross-platform: swift-log 1.5+ (observability, per NFR-005-007)
 - macOS: AppKit (NSApplication, NSWindow, NSScreen, NSPasteboard, CADisplayLink)
 - Linux X11: libxcb, libxcb-keysyms, libxcb-xkb, libxcb-xinput, libxkbcommon, libxkbcommon-x11
 - Linux Wayland: libwayland-client, libxkbcommon, libdecor (optional)
@@ -373,7 +374,7 @@ No complexity deviations required. The design:
 - [x] research.md (13 sections, comprehensive technical research)
 - [x] design.md (14 sections, complete implementation blueprint)
 - [x] CLAUDE.md updated with M1 context
-- [x] tasks.md (50 tasks: 8 core, 5 macOS, 8 X11, 8 Wayland, 5 testing, 4 docs, 3 validation)
+- [x] tasks.md (53 tasks: 8 core, 5 macOS, 8 X11, 8 Wayland, 3 logging, 5 testing, 4 docs, 3 validation)
 
 **Ready for**: Implementation execution (task-by-task or batch processing)
 

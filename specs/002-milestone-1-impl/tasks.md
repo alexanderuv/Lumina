@@ -198,6 +198,7 @@
 ### Wayland Protocols & Core Types
 - [ ] **T023** Create WaylandProtocols in new file `Sources/Lumina/Platforms/Linux/Wayland/WaylandProtocols.swift`
   - Define WaylandProtocols struct tracking available protocols: hasFractionalScale, hasXdgDecoration, versions
+  - Track essential protocols (xdg-shell) and optional protocols (fractional-scale, xdg-decoration)
   - Implement protocol enumeration via wl_registry listener callbacks
   - Runtime capability detection for optional protocols
 
@@ -211,7 +212,7 @@
   - Implement thread-safe `postUserEvent()`
   - Implement `createWindow()` delegating to WaylandWindow
   - Implement static capability methods
-  - Error on missing required protocols (xdg-shell)
+  - Error on missing essential protocols (xdg-shell v2+)
 
 ### WaylandWindow Implementation
 - [ ] **T025** Create WaylandWindow in new file `Sources/Lumina/Platforms/Linux/Wayland/WaylandWindow.swift`
@@ -266,6 +267,32 @@
   - DISPLAY → X11Application
   - Error if no display server detected
   - Mark with #if os(Linux) conditional compilation
+
+---
+
+## Phase 5.5: Logging Infrastructure (swift-log Integration)
+
+- [ ] **T030a** Add swift-log dependency in Package.swift
+  - Add `.package(url: "https://github.com/apple/swift-log.git", from: "1.5.0")` to dependencies
+  - Add "Logging" product dependency to Lumina target
+  - Ensure compatible with Swift 6.2+ concurrency model
+
+- [ ] **T030b** Create Logger infrastructure in new file `Sources/Lumina/Core/Logging.swift`
+  - Import Logging framework
+  - Create `public struct LuminaLogger` wrapping Logger
+  - Add configurable log levels: off, error, info, debug, trace (per NFR-005)
+  - Add convenience methods: `logEvent(_:)`, `logStateTransition(_:)`, `logPlatformCall(_:)`, `logCapabilityDetection(_:)`, `logError(_:)`
+  - Include high-resolution timestamps (per NFR-007)
+  - Mark as Sendable for cross-thread logging
+
+- [ ] **T030c** Integrate logging in platform implementations
+  - Add logger property to MacApplication, X11Application, WaylandApplication
+  - Log events: window creation, focus changes, scale factor changes (per NFR-006)
+  - Log state transitions: event loop mode switches, window lifecycle
+  - Log platform-specific calls: XCB operations, Wayland protocol calls, AppKit interactions
+  - Log capability detection: X11 extensions, Wayland protocols, macOS feature availability
+  - Log error conditions: missing protocols, failed operations
+  - Use appropriate log levels (debug for verbose, info for state changes, error for failures)
 
 ---
 
@@ -361,12 +388,15 @@
 
 ## Phase 8: Package Configuration
 
-- [ ] **T042** Update Package.swift with Linux system library targets
+- [ ] **T042** Update Package.swift with Linux system library targets and swift-log
+  - Set minimum Swift version: `.swiftLanguageVersions([.v6])`
+  - Set platforms: `.macOS(.v15), .windows(.v11), .linux`
+  - Add swift-log dependency: `.package(url: "https://github.com/apple/swift-log.git", from: "1.5.0")`
   - Add CXCBLinux .systemLibrary target with pkgConfig and apt/yum providers
   - Add CWaylandLinux .systemLibrary target
   - Add conditional dependencies for Linux platform
   - Define LUMINA_X11 and LUMINA_WAYLAND compiler flags for Linux
-  - Ensure macOS 15+, Windows 11+, Linux platform specifications
+  - Add "Logging" product to Lumina target dependencies
 
 ---
 
@@ -377,7 +407,8 @@
   - Document ControlFlowMode, Deadline, Capabilities structs with examples
   - Document Clipboard API with usage examples
   - Document Monitor API with enumeration examples
-  - Follow constitution requirement: descriptions, parameters, return values, throws, examples
+  - Document LuminaLogger API with configuration and usage examples
+  - Follow Constitution Principle I: descriptions, parameters, return values, throws, AND usage examples for every public API
 
 - [ ] **T044** [P] Create platform compatibility matrix in `docs/platform-compatibility.md`
   - Create feature support matrix (macOS, Windows, Linux X11, Linux Wayland)
@@ -432,6 +463,8 @@
   - Documentation builds without errors
   - No P0 or P1 bugs identified
   - Constitution compliance verified (all 6 principles)
+  - Verify M0 cursor APIs (FR-027-030) unchanged and functional
+  - Verify logging output at all configured levels (off/error/info/debug/trace)
 
 ---
 
@@ -444,10 +477,11 @@
 4. X11 (T014-T021): T015 (atoms) blocks T016 (application), T016 blocks T017 (window)
 5. Wayland (T022-T029): T023 (protocols) blocks T024 (application), T024 blocks T025 (window)
 6. T030 (LinuxApplication) requires T016 (X11Application) and T024 (WaylandApplication)
-7. T042 (Package.swift) requires T014 (CXCBLinux) and T022 (CWaylandLinux)
-8. Testing (T031-T041) can start after T001-T008 complete
-9. Documentation (T043-T046) can run in parallel with testing
-10. Final validation (T047-T050) requires ALL previous tasks complete
+7. T030a-T030c (Logging infrastructure) must complete before T031 (testing phase)
+8. T042 (Package.swift) requires T014 (CXCBLinux), T022 (CWaylandLinux), and T030a (swift-log dependency)
+9. Testing (T031-T041) can start after T001-T008 and T030a-T030c complete
+10. Documentation (T043-T046) can run in parallel with testing
+11. Final validation (T047-T050) requires ALL previous tasks complete
 
 **Parallel Groups**:
 - **Group 1** [P]: T001, T002, T003, T004, T005, T006 (core types, different files)
@@ -458,12 +492,14 @@
 - **Group 6** [P]: T036, T037, T038, T039, T040, T041 (manual test checklists, different files)
 - **Group 7** [P]: T043, T044, T045, T046 (documentation, different files)
 
+Note: T030a-T030c (Logging) are sequential: T030a → T030b → T030c
+
 ---
 
 ## Validation Checklist
 
 - [x] All protocol extensions have tasks (LuminaApp, LuminaWindow)
-- [x] All new core types have implementation tasks (Events, ControlFlowMode, Monitor, Capabilities, Clipboard)
+- [x] All new core types have implementation tasks (Events, ControlFlowMode, Monitor, Capabilities, Clipboard, Logging)
 - [x] All platform implementations have tasks (macOS Wave B, X11, Wayland)
 - [x] All tests use Swift Testing framework (NO XCTest)
 - [x] Tests come AFTER implementation (unit tests for logic, manual tests for platform)
@@ -471,6 +507,7 @@
 - [x] Parallel tasks are truly independent (different files)
 - [x] Each task specifies exact file path
 - [x] Constitution compliance verification included (T050)
+- [x] All NFRs have corresponding tasks (including NFR-005-007 logging via swift-log)
 
 ---
 
@@ -488,5 +525,5 @@
 
 ---
 
-**Estimated Completion**: 50 tasks, 40-50 hours of focused implementation work
+**Estimated Completion**: 53 tasks (50 original + 3 logging), 42-52 hours of focused implementation work
 **Ready for**: Execution with `/implement` or manual task-by-task implementation
