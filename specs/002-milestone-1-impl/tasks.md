@@ -68,6 +68,15 @@
   - Add `capabilities() -> WindowCapabilities` and `currentMonitor() throws -> Monitor`
   - Provide default implementations that throw unsupportedPlatformFeature for platforms without Wave B
 
+- [ ] **T008a** Refactor Cursor to protocol-based pattern in `Sources/Lumina/Core/Cursor.swift`
+  - Create `@MainActor public protocol LuminaCursor: Sendable` with instance methods
+  - Add methods: `func set(_ cursor: SystemCursor)`, `func hide()`, `func show()`
+  - Keep SystemCursor enum unchanged (maintained from M0)
+  - Update LuminaWindow protocol to add `func cursor() -> any LuminaCursor`
+  - Remove static API pattern (breaking change from M0, justified by architectural consistency)
+  - Update all platform implementations (MacWindow, WinWindow) to return platform-specific cursor instances
+  - Document migration path in API documentation: `Cursor.set(.hand)` → `window.cursor().set(.hand)`
+
 ---
 
 ## Phase 2: macOS Wave B Implementation
@@ -471,15 +480,15 @@
 ## Dependencies
 
 **Critical Path**:
-1. T001-T008 (Core types) must complete before any platform implementation
-2. T007-T008 (Protocol extensions) block all platform implementations
+1. T001-T008a (Core types and protocol extensions) must complete before any platform implementation
+2. T007-T008a (Protocol extensions) block all platform implementations
 3. macOS Wave B (T009-T013): Sequential within group
 4. X11 (T014-T021): T015 (atoms) blocks T016 (application), T016 blocks T017 (window)
 5. Wayland (T022-T029): T023 (protocols) blocks T024 (application), T024 blocks T025 (window)
 6. T030 (LinuxApplication) requires T016 (X11Application) and T024 (WaylandApplication)
 7. T030a-T030c (Logging infrastructure) must complete before T031 (testing phase)
 8. T042 (Package.swift) requires T014 (CXCBLinux), T022 (CWaylandLinux), and T030a (swift-log dependency)
-9. Testing (T031-T041) can start after T001-T008 and T030a-T030c complete
+9. Testing (T031-T041) can start after T001-T008a and T030a-T030c complete
 10. Documentation (T043-T046) can run in parallel with testing
 11. Final validation (T047-T050) requires ALL previous tasks complete
 
@@ -525,5 +534,5 @@ Note: T030a-T030c (Logging) are sequential: T030a → T030b → T030c
 
 ---
 
-**Estimated Completion**: 53 tasks (50 original + 3 logging), 42-52 hours of focused implementation work
+**Estimated Completion**: 54 tasks (50 original + 3 logging + 1 cursor refactor), 43-53 hours of focused implementation work
 **Ready for**: Execution with `/implement` or manual task-by-task implementation

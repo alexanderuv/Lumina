@@ -374,7 +374,7 @@ No complexity deviations required. The design:
 - [x] research.md (13 sections, comprehensive technical research)
 - [x] design.md (14 sections, complete implementation blueprint)
 - [x] CLAUDE.md updated with M1 context
-- [x] tasks.md (53 tasks: 8 core, 5 macOS, 8 X11, 8 Wayland, 3 logging, 5 testing, 4 docs, 3 validation)
+- [x] tasks.md (54 tasks: 9 core, 5 macOS, 8 X11, 8 Wayland, 3 logging, 5 testing, 4 docs, 3 validation)
 
 **Ready for**: Implementation execution (task-by-task or batch processing)
 
