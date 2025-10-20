@@ -27,6 +27,7 @@ internal struct MacMonitor {
 
         for (index, screen) in screens.enumerated() {
             let frame = screen.frame
+            let visibleFrame = screen.visibleFrame  // Excludes menu bar, dock, etc.
             let scaleFactor = Float(screen.backingScaleFactor)
 
             // Convert from AppKit coordinates (bottom-left origin) to logical coordinates
@@ -39,6 +40,17 @@ internal struct MacMonitor {
             let physicalPosition = PhysicalPosition(x: physicalX, y: physicalY)
             let logicalSize = physicalSize.toLogical(scaleFactor: scaleFactor)
             let logicalPosition = physicalPosition.toLogical(scaleFactor: scaleFactor)
+
+            // Calculate work area (visible frame) in logical coordinates
+            let workAreaLogicalX = Float(visibleFrame.origin.x)
+            let workAreaLogicalY = Float(visibleFrame.origin.y)
+            let workAreaLogicalWidth = Float(visibleFrame.size.width)
+            let workAreaLogicalHeight = Float(visibleFrame.size.height)
+
+            let workArea = LogicalRect(
+                origin: LogicalPosition(x: workAreaLogicalX, y: workAreaLogicalY),
+                size: LogicalSize(width: workAreaLogicalWidth, height: workAreaLogicalHeight)
+            )
 
             // The first screen in NSScreen.screens is the primary monitor
             let isPrimary = (index == 0)
@@ -54,6 +66,7 @@ internal struct MacMonitor {
                 name: name,
                 position: logicalPosition,
                 size: logicalSize,
+                workArea: workArea,
                 scaleFactor: scaleFactor,
                 isPrimary: isPrimary
             )

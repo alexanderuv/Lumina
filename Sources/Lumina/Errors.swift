@@ -225,10 +225,10 @@ extension LuminaError: CustomStringConvertible {
             return "Monitor enumeration failed: \(reason)"
         case .unsupportedPlatformFeature(let feature):
             return "Feature '\(feature)' is not supported on this platform"
-        case .waylandProtocolMissing(let protocol):
-            return "Required Wayland protocol '\(protocol)' is missing"
-        case .x11ExtensionMissing(let extension):
-            return "Required X11 extension '\(extension)' is missing"
+        case .waylandProtocolMissing(let proto):
+            return "Required Wayland protocol '\(proto)' is missing"
+        case .x11ExtensionMissing(let ext):
+            return "Required X11 extension '\(ext)' is missing"
         }
     }
 }

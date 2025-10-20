@@ -245,7 +245,128 @@ internal struct MacWindow: LuminaWindow {
     func scaleFactor() -> Float {
         Float(nsWindow.backingScaleFactor)
     }
+
+    mutating func requestRedraw() {
+        // Mark the content view as needing display
+        nsWindow.contentView?.setNeedsDisplay(nsWindow.contentView!.bounds)
+
+        // TODO: Also notify MacApplication to mark this window for redraw
+        // This requires passing the application reference or using a callback
+        // For now, we rely on NSView's setNeedsDisplay which triggers display events
+    }
+
+    mutating func setDecorated(_ decorated: Bool) throws {
+        if decorated {
+            // Add decorations
+            var styleMask = nsWindow.styleMask
+            styleMask.insert([.titled, .closable, .miniaturizable])
+            nsWindow.styleMask = styleMask
+        } else {
+            // Remove decorations (borderless)
+            nsWindow.styleMask = .borderless
+        }
+    }
+
+    mutating func setAlwaysOnTop(_ alwaysOnTop: Bool) throws {
+        if alwaysOnTop {
+            nsWindow.level = .floating
+        } else {
+            nsWindow.level = .normal
+        }
+    }
+
+    mutating func setTransparent(_ transparent: Bool) throws {
+        nsWindow.isOpaque = !transparent
+        nsWindow.backgroundColor = transparent ? .clear : .windowBackgroundColor
+        nsWindow.hasShadow = !transparent
+    }
+
+    func capabilities() -> WindowCapabilities {
+        // macOS supports all Wave B features except client-side decorations
+        return WindowCapabilities(
+            supportsTransparency: true,
+            supportsAlwaysOnTop: true,
+            supportsDecorationToggle: true,
+            supportsClientSideDecorations: false  // macOS uses system decorations
+        )
+    }
+
+    func currentMonitor() throws -> Monitor {
+        // Get the screen this window is on
+        guard let screen = nsWindow.screen else {
+            throw LuminaError.monitorEnumerationFailed(reason: "Window has no associated screen")
+        }
+
+        // Enumerate all monitors and find the one matching this screen
+        let monitors = try MacMonitor.enumerateMonitors()
+
+        // Find monitor by matching screen properties
+        for monitor in monitors {
+            // Compare using screen frame position (approximate match due to floating point)
+            let screenFrame = screen.frame
+            let monitorPos = monitor.position
+            let dx = abs(Float(screenFrame.origin.x) - monitorPos.x)
+            let dy = abs(Float(screenFrame.origin.y) - monitorPos.y)
+
+            if dx < 1.0 && dy < 1.0 {
+                return monitor
+            }
+        }
+
+        // If no exact match, return the first monitor
+        if let first = monitors.first {
+            return first
+        }
+
+        throw LuminaError.monitorEnumerationFailed(reason: "No monitors found")
+    }
+
+    func cursor() -> any LuminaCursor {
+        return MacCursor()
+    }
 }
+
+// MARK: - MacCursor Implementation
+
+/// macOS implementation of LuminaCursor using NSCursor
+@MainActor
+private struct MacCursor: LuminaCursor {
+    func set(_ cursor: SystemCursor) {
+        let nsCursor: NSCursor = switch cursor {
+        case .arrow:
+            .arrow
+        case .ibeam:
+            .iBeam
+        case .crosshair:
+            .crosshair
+        case .hand:
+            .pointingHand
+        case .resizeNS:
+            .resizeUpDown
+        case .resizeEW:
+            .resizeLeftRight
+        case .resizeNESW:
+            // macOS doesn't have a built-in diagonal resize cursor
+            // Fall back to arrow for now
+            .arrow
+        case .resizeNWSE:
+            // macOS doesn't have a built-in diagonal resize cursor
+            // Fall back to arrow for now
+            .arrow
+        }
+        nsCursor.set()
+    }
+
+    func hide() {
+        NSCursor.hide()
+    }
+
+    func show() {
+        NSCursor.unhide()
+    }
+}
+
+extension MacCursor: @unchecked Sendable {}
 
 // MARK: - Sendable Conformance
 

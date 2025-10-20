@@ -74,9 +74,17 @@ struct MacApplication: LuminaApp {
     private let appDelegate: MacAppDelegate
 
     /// Track pointer enter/exit state per window to deduplicate events.
-    /// AppKit can spam us with duplicate mouseEntered/mouseExited events,
-    /// similar to SDL's handling in SDL_cocoawindow.m
+    /// AppKit can generate duplicate mouseEntered/mouseExited events.
     private var pointerInsideWindow: [WindowID: Bool] = [:]
+
+    /// Windows that need redrawing
+    private var redrawRequests: Set<WindowID> = []
+
+    /// Display link for frame pacing (not yet implemented for M1)
+    private var displayLink: AnyObject? = nil
+
+    /// Last clipboard change count for hasChanged tracking
+    private var lastChangeCount: Int = 0
 
     /// Whether the application should quit when the last window is closed.
     var exitOnLastWindowClosed: Bool {
@@ -246,6 +254,121 @@ struct MacApplication: LuminaApp {
 
         // After waking up, process user events
         processUserEvents()
+    }
+
+    mutating func pumpEvents(mode: ControlFlowMode) -> Event? {
+        // Determine timeout based on control flow mode
+        let timeout: Date = switch mode {
+        case .wait:
+            .distantFuture
+        case .poll:
+            .distantPast
+        case .waitUntil(let deadline):
+            deadline.internalDate
+        }
+
+        // Check for redraw requests first (priority handling)
+        if let windowID = redrawRequests.first {
+            redrawRequests.remove(windowID)
+            return .redraw(.requested(windowID, dirtyRect: nil))
+        }
+
+        // Process platform events with timeout
+        while let nsEvent = NSApp.nextEvent(
+            matching: .any,
+            until: timeout,
+            inMode: .default,
+            dequeue: true
+        ) {
+            NSApp.sendEvent(nsEvent)
+
+            // Try to translate to Lumina event
+            if let windowNumber = nsEvent.window?.windowNumber,
+               let windowID = windowRegistry.windowID(for: windowNumber) {
+                if let event = translateNSEvent(nsEvent, for: windowID) {
+                    // Handle mouse focus: generate enter on first movement,
+                    // respect exit but filter spurious ones
+                    if case .pointer(let pointerEvent) = event {
+                        switch pointerEvent {
+                        case .moved(let id, _):
+                            // Generate enter event on first movement in window
+                            let wasInside = pointerInsideWindow[id] ?? false
+                            if !wasInside {
+                                pointerInsideWindow[id] = true
+                                return .pointer(.entered(id))
+                            }
+                        case .entered(_):
+                            // Ignore enter events - generate from move instead
+                            continue
+                        case .left(let id):
+                            // Respect exit events, but only if we were inside
+                            if pointerInsideWindow[id] == true {
+                                pointerInsideWindow[id] = false
+                            } else {
+                                // Skip spurious exit
+                                continue
+                            }
+                        default:
+                            break
+                        }
+                    }
+                    return event
+                }
+            }
+
+            // In poll mode, don't block waiting for more events
+            if case .poll = mode {
+                break
+            }
+        }
+
+        // Check for window events
+        if let windowEvent = pollWindowEvent() {
+            return windowEvent
+        }
+
+        // Check for user events
+        return pollUserEvent()
+    }
+
+    /// Mark a window as needing redraw
+    internal mutating func markWindowNeedsRedraw(_ windowID: WindowID) {
+        redrawRequests.insert(windowID)
+
+        // Wake up the event loop
+        let dummyEvent = NSEvent.otherEvent(
+            with: .applicationDefined,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: 0,
+            context: nil,
+            subtype: 0,
+            data1: 0,
+            data2: 0
+        )
+        if let event = dummyEvent {
+            NSApp.postEvent(event, atStart: false)
+        }
+    }
+
+    static func monitorCapabilities() -> MonitorCapabilities {
+        // macOS supports ProMotion (dynamic refresh rate) on newer MacBook Pros
+        // and Studio Display. Also supports fractional scaling through Retina modes.
+        return MonitorCapabilities(
+            supportsDynamicRefreshRate: true,  // ProMotion on supported hardware
+            supportsFractionalScaling: true     // Retina scaling modes
+        )
+    }
+
+    static func clipboardCapabilities() -> ClipboardCapabilities {
+        // macOS supports text clipboard via NSPasteboard
+        // Images and HTML support is future work
+        return ClipboardCapabilities(
+            supportsText: true,
+            supportsImages: false,
+            supportsHTML: false
+        )
     }
 
     func postUserEvent(_ event: UserEvent) {

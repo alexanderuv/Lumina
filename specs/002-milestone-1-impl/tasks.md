@@ -38,37 +38,37 @@
   - Ensure Sendable and Hashable conformance
 
 ### Capabilities System
-- [ ] **T004** [P] Create Capabilities types in new file `Sources/Lumina/Core/Capabilities.swift`
+- [X] **T004** [P] Create Capabilities types in new file `Sources/Lumina/Core/Capabilities.swift`
   - Implement WindowCapabilities struct: supportsTransparency, supportsAlwaysOnTop, supportsDecorationToggle, supportsClientSideDecorations
   - Implement ClipboardCapabilities struct: supportsText, supportsImages, supportsHTML
   - Implement MonitorCapabilities struct: supportsDynamicRefreshRate, supportsFractionalScaling
   - All structs Sendable and Hashable with initializers
 
 ### Clipboard & Error Handling
-- [ ] **T005** [P] Create Clipboard API in new file `Sources/Lumina/Core/Clipboard.swift`
+- [X] **T005** [P] Create Clipboard API in new file `Sources/Lumina/Core/Clipboard.swift`
   - Mark struct as @MainActor and Sendable
   - Add static methods: `readText() throws -> String?`, `writeText(_ text: String) throws`, `hasChanged() -> Bool`
   - Add platform-specific implementations via conditional compilation hooks
 
-- [ ] **T006** [P] Extend LuminaError enum in `Sources/Lumina/Core/Errors.swift`
+- [X] **T006** [P] Extend LuminaError enum in `Sources/Lumina/Core/Errors.swift`
   - Add clipboard errors: clipboardAccessDenied, clipboardReadFailed(String), clipboardWriteFailed(String)
   - Add monitor errors: monitorEnumerationFailed(String)
   - Add platform errors: unsupportedPlatformFeature(feature: String), waylandProtocolMissing(protocol: String), x11ExtensionMissing(extension: String)
   - Extend CustomStringConvertible with new error descriptions
 
 ### Protocol Extensions
-- [ ] **T007** Extend LuminaApp protocol in `Sources/Lumina/Core/LuminaApp.swift`
+- [X] **T007** Extend LuminaApp protocol in `Sources/Lumina/Core/LuminaApp.swift`
   - Add `pumpEvents(mode: ControlFlowMode) -> Event?` method
   - Add static methods: `monitorCapabilities() -> MonitorCapabilities`, `clipboardCapabilities() -> ClipboardCapabilities`
   - Update default implementations: `run()`, `poll()`, `wait()` to use pumpEvents()
   - Maintain @MainActor isolation
 
-- [ ] **T008** Extend LuminaWindow protocol in `Sources/Lumina/Core/LuminaWindow.swift`
+- [X] **T008** Extend LuminaWindow protocol in `Sources/Lumina/Core/LuminaWindow.swift`
   - Add Wave B methods: `requestRedraw()`, `setDecorated(_ decorated: Bool) throws`, `setAlwaysOnTop(_ alwaysOnTop: Bool) throws`, `setTransparent(_ transparent: Bool) throws`
   - Add `capabilities() -> WindowCapabilities` and `currentMonitor() throws -> Monitor`
   - Provide default implementations that throw unsupportedPlatformFeature for platforms without Wave B
 
-- [ ] **T008a** Refactor Cursor to protocol-based pattern in `Sources/Lumina/Core/Cursor.swift`
+- [X] **T008a** Refactor Cursor to protocol-based pattern in `Sources/Lumina/Core/Cursor.swift`
   - Create `@MainActor public protocol LuminaCursor: Sendable` with instance methods
   - Add methods: `func set(_ cursor: SystemCursor)`, `func hide()`, `func show()`
   - Keep SystemCursor enum unchanged (maintained from M0)
@@ -82,7 +82,7 @@
 ## Phase 2: macOS Wave B Implementation
 
 ### MacApplication Enhancements
-- [ ] **T009** Extend MacApplication in `Sources/Lumina/Platforms/macOS/MacApplication.swift`
+- [X] **T009** Extend MacApplication in `Sources/Lumina/Platforms/macOS/MacApplication.swift`
   - Add state properties: `redrawRequests: Set<WindowID>`, `displayLink: CADisplayLink?`, `lastChangeCount: Int`
   - Implement `pumpEvents(mode: ControlFlowMode) -> Event?` with NSRunLoop integration (wait/poll/waitUntil timeout logic)
   - Add `markWindowNeedsRedraw(_ windowID: WindowID)` helper
@@ -90,7 +90,7 @@
   - Process redraw requests with priority in event pump
 
 ### MacWindow Wave B Methods
-- [ ] **T010** Extend MacWindow in `Sources/Lumina/Platforms/macOS/MacWindow.swift`
+- [X] **T010** Extend MacWindow in `Sources/Lumina/Platforms/macOS/MacWindow.swift`
   - Implement `requestRedraw()` using `setNeedsDisplay()` and application.markWindowNeedsRedraw()
   - Implement `setDecorated(_ decorated: Bool)` with NSWindow styleMask manipulation (titled/borderless)
   - Implement `setAlwaysOnTop(_ alwaysOnTop: Bool)` using window.level (.floating/.normal)
@@ -99,7 +99,7 @@
   - Implement `currentMonitor()` returning Monitor from window.screen
 
 ### macOS Monitor Support
-- [ ] **T011** Extend MacMonitor in `Sources/Lumina/Platforms/macOS/MacMonitor.swift`
+- [X] **T011** Extend MacMonitor in `Sources/Lumina/Platforms/macOS/MacMonitor.swift`
   - Implement `fromNSScreen(_ screen: NSScreen) throws -> Monitor` static method
   - Convert AppKit bottom-left coordinates to top-left
   - Extract screen number, localizedName, frame, visibleFrame, backingScaleFactor
@@ -107,7 +107,7 @@
   - Add monitor change notifications using NSApplication.didChangeScreenParametersNotification
 
 ### macOS Clipboard Implementation
-- [ ] **T012** [P] Create MacClipboard in new file `Sources/Lumina/Platforms/macOS/MacClipboard.swift`
+- [X] **T012** [P] Create MacClipboard in new file `Sources/Lumina/Platforms/macOS/MacClipboard.swift`
   - Mark struct as @MainActor
   - Implement `readText()` using NSPasteboard.general.string(forType: .string)
   - Implement `writeText()` using clearContents() and setString()
@@ -115,9 +115,9 @@
   - Wire to global Clipboard API via conditional compilation (#if os(macOS))
 
 ### macOS Capabilities
-- [ ] **T013** [P] Create MacCapabilities in new file `Sources/Lumina/Platforms/macOS/MacCapabilities.swift`
-  - Implement capability queries for macOS Wave B features
-  - Document macOS-specific behaviors (integer scaling, no CSD)
+- [X] **T013** [P] Capability methods implemented in MacApplication, MacWindow, and MacClipboard
+  - Implemented capability queries for macOS Wave B features
+  - Documented macOS-specific behaviors (integer scaling, no CSD)
 
 ---
 
