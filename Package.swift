@@ -21,10 +21,28 @@ let package = Package(
         /// Cross-platform windowing API (includes platform backends via conditional compilation)
         .target(
             name: "Lumina",
-            dependencies: [],
+            dependencies: [
+                .target(name: "CXCBLinux", condition: .when(platforms: [.linux]))
+            ],
             swiftSettings: [
                 .swiftLanguageMode(.v6),
                 .enableUpcomingFeature("StrictConcurrency")
+            ]
+        ),
+
+        // MARK: - C Interop (Linux)
+
+        /// XCB bindings for Linux X11 support
+        .systemLibrary(
+            name: "CXCBLinux",
+            path: "Sources/CInterop/CXCBLinux",
+            pkgConfig: "xcb xcb-keysyms xcb-xkb xcb-xinput xcb-randr xkbcommon xkbcommon-x11",
+            providers: [
+                .apt(["libxcb1-dev", "libxcb-keysyms1-dev", "libxcb-xkb-dev",
+                      "libxcb-xinput-dev", "libxcb-randr0-dev",
+                      "libxkbcommon-dev", "libxkbcommon-x11-dev"]),
+                .yum(["libxcb-devel", "xcb-util-keysyms-devel",
+                      "libxkbcommon-devel", "libxkbcommon-x11-devel"])
             ]
         ),
 

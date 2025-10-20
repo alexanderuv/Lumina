@@ -1,0 +1,18 @@
+module CXCBLinux {
+    header "shims.h"
+
+    // Core XCB protocol
+    link "xcb"
+
+    // XCB extensions
+    link "xcb-keysyms"
+    link "xcb-xkb"
+    link "xcb-xinput"
+    link "xcb-randr"
+
+    // XKB common library for keymap interpretation
+    link "xkbcommon"
+    link "xkbcommon-x11"
+
+    export *
+}

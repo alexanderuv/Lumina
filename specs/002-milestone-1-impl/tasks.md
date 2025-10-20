@@ -124,20 +124,20 @@
 ## Phase 3: Linux X11 Implementation
 
 ### C Interop Setup
-- [ ] **T014** [P] Create CXCBLinux module in `Sources/CInterop/CXCBLinux/`
+- [X] **T014** [P] Create CXCBLinux module in `Sources/CInterop/CXCBLinux/`
   - Create `module.modulemap` with headers for xcb, xcb-keysyms, xcb-xkb, xcb-xinput, xkbcommon, xkbcommon-x11
   - Create `shims.h` with C helper functions for XCB API
   - Add link directives for all XCB libraries
   - Document required system packages (libxcb-dev, etc.)
 
 ### X11 Atoms & Core Types
-- [ ] **T015** Create X11Atoms in new file `Sources/Lumina/Platforms/Linux/X11/X11Atoms.swift`
+- [X] **T015** Create X11Atoms in new file `Sources/Lumina/Platforms/Linux/X11/X11Atoms.swift`
   - Define X11Atoms struct with cached atom IDs: WM_PROTOCOLS, WM_DELETE_WINDOW, _NET_WM_NAME, _NET_WM_STATE, _NET_WM_STATE_ABOVE, _NET_WM_STATE_FULLSCREEN, _MOTIF_WM_HINTS, CLIPBOARD, UTF8_STRING
   - Implement `static func cache(connection:) throws -> X11Atoms` using xcb_intern_atom
   - Error handling for missing atoms
 
 ### X11Application Event Loop
-- [ ] **T016** Create X11Application in new file `Sources/Lumina/Platforms/Linux/X11/X11Application.swift`
+- [X] **T016** Create X11Application in new file `Sources/Lumina/Platforms/Linux/X11/X11Application.swift`
   - Mark as @MainActor conforming to LuminaApp
   - Implement init() with XCB connection, screen, XKB context setup
   - Add state: connection, screen, atoms, xkbContext, eventQueue, userEventQueue, windowRegistry
@@ -148,7 +148,7 @@
   - Implement static capability methods
 
 ### X11Window Implementation
-- [ ] **T017** Create X11Window in new file `Sources/Lumina/Platforms/Linux/X11/X11Window.swift`
+- [X] **T017** Create X11Window in new file `Sources/Lumina/Platforms/Linux/X11/X11Window.swift`
   - Mark as @MainActor conforming to LuminaWindow
   - Implement `static func create()` with xcb_generate_id, xcb_create_window, event mask setup, WM_PROTOCOLS
   - Implement show/hide/close with xcb_map_window, xcb_unmap_window, xcb_destroy_window
@@ -161,7 +161,7 @@
   - Implement capabilities() returning platform-specific WindowCapabilities
 
 ### X11 Input Translation
-- [ ] **T018** [P] Create X11Input in new file `Sources/Lumina/Platforms/Linux/X11/X11Input.swift`
+- [X] **T018** [P] Create X11Input in new file `Sources/Lumina/Platforms/Linux/X11/X11Input.swift`
   - Implement static translation functions for XCB events to Lumina events
   - `translateButtonEvent()` for mouse buttons
   - `translateMotionEvent()` for mouse movement
@@ -171,7 +171,7 @@
   - Modifier key mapping (Shift, Control, Alt, Super)
 
 ### X11 Monitor Enumeration
-- [ ] **T019** [P] Create X11Monitor in new file `Sources/Lumina/Platforms/Linux/X11/X11Monitor.swift`
+- [X] **T019** [P] Create X11Monitor in new file `Sources/Lumina/Platforms/Linux/X11/X11Monitor.swift`
   - Implement monitor enumeration using XRandR (xcb_randr_get_screen_resources_current)
   - Parse output info: position, size, rotation, connection status
   - Implement DPI detection: XSETTINGS → Xft.dpi → physical dimensions → 96 DPI fallback
@@ -179,7 +179,7 @@
   - Convert to Monitor structs with proper scale factor calculation
 
 ### X11 Clipboard
-- [ ] **T020** [P] Create X11Clipboard in new file `Sources/Lumina/Platforms/Linux/X11/X11Clipboard.swift`
+- [X] **T020** [P] Create X11Clipboard in new file `Sources/Lumina/Platforms/Linux/X11/X11Clipboard.swift`
   - Implement CLIPBOARD selection protocol with xcb_convert_selection for read
   - Implement xcb_set_selection_owner for write
   - Handle SelectionNotify and SelectionRequest events
@@ -188,7 +188,7 @@
   - Wire to global Clipboard API via conditional compilation
 
 ### X11 Capabilities
-- [ ] **T021** [P] Create X11Capabilities in new file `Sources/Lumina/Platforms/Linux/X11/X11Capabilities.swift`
+- [X] **T021** [P] Create X11Capabilities in new file `Sources/Lumina/Platforms/Linux/X11/X11Capabilities.swift`
   - Implement runtime X11 capability detection
   - Check for EWMH support, XInput2, XRandR versions
   - Document window manager compatibility matrix

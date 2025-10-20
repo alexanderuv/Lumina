@@ -90,7 +90,7 @@ public enum ControlFlowMode: Sendable {
 /// ```
 public struct Deadline: Sendable {
     /// The target date/time for this deadline
-    private let date: Date
+    internal let date: Date
 
     /// Create a deadline relative to the current time.
     ///

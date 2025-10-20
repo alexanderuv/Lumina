@@ -231,6 +231,8 @@ public func createLuminaApp() throws -> some LuminaApp {
     return try MacApplication()
     #elseif os(Windows)
     return try WinApplication()
+    #elseif os(Linux)
+    return try X11Application()
     #else
     #error("Unsupported platform")
     #endif

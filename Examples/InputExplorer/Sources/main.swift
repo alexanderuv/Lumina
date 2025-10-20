@@ -111,6 +111,12 @@ struct InputExplorer {
                 // User Events
                 case .user(let userEvent):
                     print("[\(eventCount)] User event: \(userEvent.data)")
+
+                // M1 Events (not actively demonstrated in this example)
+                case .redraw:
+                    break
+                case .monitor:
+                    break
                 }
             }
 
