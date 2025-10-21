@@ -279,18 +279,19 @@ internal struct WinWindow: LuminaWindow {
     ///   - resizable: Whether the window can be resized by the user
     ///   - monitor: Optional monitor to create the window on (uses primary if nil)
     ///   - closeCallback: Optional callback to invoke when the window closes
-    /// - Returns: Result containing WinWindow or LuminaError
+    /// - Returns: Newly created WinWindow
+    /// - Throws: LuminaError if window creation fails
     static func create(
         title: String,
         size: LogicalSize,
         resizable: Bool,
         monitor: Monitor? = nil,
         closeCallback: WindowCloseCallback? = nil
-    ) -> Result<WinWindow, LuminaError> {
+    ) throws -> WinWindow {
         // Register window class on first call
         if !windowClassRegistered {
-            if !registerWindowClass() {
-                return .failure(.windowCreationFailed(reason: "Failed to register window class"))
+            guard registerWindowClass() else {
+                throw LuminaError.windowCreationFailed(reason: "Failed to register window class")
             }
             windowClassRegistered = true
         }
@@ -374,7 +375,7 @@ internal struct WinWindow: LuminaWindow {
 
         guard let validHwnd = hwnd else {
             let error = GetLastError()
-            return .failure(.windowCreationFailed(reason: "CreateWindowExW failed with error \(error)"))
+            throw LuminaError.windowCreationFailed(reason: "CreateWindowExW failed with error \(error)")
         }
 
         // ALWAYS refresh the window frame at high DPI to fix title bar positioning
@@ -423,7 +424,7 @@ internal struct WinWindow: LuminaWindow {
         let windowID = WindowID()
         WinWindowRegistry.shared.register(hwnd: validHwnd, windowID: windowID, closeCallback: closeCallback)
 
-        return .success(WinWindow(id: windowID, hwnd: validHwnd))
+        return WinWindow(id: windowID, hwnd: validHwnd)
     }
 
     mutating func show() {

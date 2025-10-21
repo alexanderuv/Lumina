@@ -1,9 +1,3 @@
-#if os(macOS)
-import AppKit
-#elseif os(Windows)
-import WinSDK
-#endif
-
 /// Protocol for cursor appearance and visibility control.
 ///
 /// LuminaCursor provides a unified interface for changing the mouse cursor

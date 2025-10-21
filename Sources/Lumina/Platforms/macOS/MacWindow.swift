@@ -50,14 +50,15 @@ internal struct MacWindow: LuminaWindow {
     ///   - resizable: Whether the window can be resized by the user
     ///   - monitor: Optional monitor to create the window on (uses primary if nil)
     ///   - closeCallback: Optional callback to invoke when the window closes
-    /// - Returns: Result containing MacWindow or LuminaError
+    /// - Returns: Newly created MacWindow
+    /// - Throws: LuminaError if window creation fails
     internal static func create(
         title: String,
         size: LogicalSize,
         resizable: Bool,
         monitor: Monitor? = nil,
         closeCallback: WindowCloseCallback? = nil
-    ) -> Result<MacWindow, LuminaError> {
+    ) throws -> MacWindow {
         // Create content rect for the window
         let contentRect = NSRect(
             x: 0,
@@ -125,7 +126,7 @@ internal struct MacWindow: LuminaWindow {
         // Create window wrapper
         let macWindow = MacWindow(id: windowID, nsWindow: nsWindow, delegate: delegate)
 
-        return .success(macWindow)
+        return macWindow
     }
 
     mutating func show() {

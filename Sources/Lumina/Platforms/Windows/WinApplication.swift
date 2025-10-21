@@ -197,13 +197,13 @@ struct WinApplication: LuminaApp {
         size: LogicalSize,
         resizable: Bool,
         monitor: Monitor?
-    ) -> Result<LuminaWindow, LuminaError> {
+    ) throws -> LuminaWindow {
         // Capture values for the close callback
         let threadId = mainThreadId
         let shouldExitOnLastWindow = exitOnLastWindowClosed
 
         // Create the window using WinWindow
-        let result = WinWindow.create(
+        let winWindow = try WinWindow.create(
             title: title,
             size: size,
             resizable: resizable,
@@ -232,7 +232,7 @@ struct WinApplication: LuminaApp {
         // Note: Window is registered in WinWindowRegistry by WinWindow.create()
         // No need for duplicate tracking here
 
-        return result.map { $0 as LuminaWindow }
+        return winWindow as LuminaWindow
     }
 
     mutating func setWindowCloseCallback(_ callback: @escaping WindowCloseCallback) {

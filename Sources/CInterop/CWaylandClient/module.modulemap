@@ -1,0 +1,8 @@
+module CWaylandClient {
+    // Core Wayland client protocol
+    header "shim.h"
+    link "wayland-client"
+    link "xkbcommon"
+    link "decor-0"
+    export *
+}

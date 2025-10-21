@@ -6,7 +6,8 @@ import PackageDescription
 let package = Package(
     name: "Lumina",
     platforms: [
-        .macOS(.v15)
+        .macOS(.v15)   // macOS 15 (Sequoia) minimum
+        // Linux doesn't need explicit platform declaration
     ],
     products: [
         // Public cross-platform API
@@ -15,6 +16,10 @@ let package = Package(
             targets: ["Lumina"]
         )
     ],
+    dependencies: [
+        // Swift Logging API
+        .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0")
+    ],
     targets: [
         // MARK: - Public API
 
@@ -22,11 +27,15 @@ let package = Package(
         .target(
             name: "Lumina",
             dependencies: [
-                .target(name: "CXCBLinux", condition: .when(platforms: [.linux]))
+                .product(name: "Logging", package: "swift-log"),
+                .target(name: "CXCBLinux", condition: .when(platforms: [.linux])),
+                .target(name: "CWaylandClient", condition: .when(platforms: [.linux]))
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v6),
-                .enableUpcomingFeature("StrictConcurrency")
+                .enableUpcomingFeature("StrictConcurrency"),
+                .define("LUMINA_X11", .when(platforms: [.linux]))
+                // LUMINA_WAYLAND is opt-in - pass -Xswiftc -DLUMINA_WAYLAND to enable
             ]
         ),
 
@@ -43,6 +52,17 @@ let package = Package(
                       "libxkbcommon-dev", "libxkbcommon-x11-dev"]),
                 .yum(["libxcb-devel", "xcb-util-keysyms-devel",
                       "libxkbcommon-devel", "libxkbcommon-x11-devel"])
+            ]
+        ),
+
+        /// Wayland client bindings with libdecor for Linux Wayland support
+        .systemLibrary(
+            name: "CWaylandClient",
+            path: "Sources/CInterop/CWaylandClient",
+            pkgConfig: "wayland-client xkbcommon libdecor-0",
+            providers: [
+                .apt(["libwayland-dev", "libxkbcommon-dev", "libdecor-0-dev"]),
+                .yum(["wayland-devel", "libxkbcommon-devel", "libdecor-devel"])
             ]
         ),
 

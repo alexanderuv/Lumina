@@ -201,13 +201,14 @@ public protocol LuminaApp: Sendable {
     ///   - size: Initial window content size in logical pixels
     ///   - resizable: Whether the window can be resized by the user
     ///   - monitor: Optional monitor to place the window on
-    /// - Returns: The created window, or an error if creation failed
+    /// - Returns: The created window
+    /// - Throws: LuminaError if window creation fails
     mutating func createWindow(
         title: String,
         size: LogicalSize,
         resizable: Bool,
         monitor: Monitor?
-    ) -> Result<LuminaWindow, LuminaError>
+    ) throws -> LuminaWindow
 
     /// Whether the application should quit when the last window is closed.
     ///
@@ -223,16 +224,26 @@ public protocol LuminaApp: Sendable {
 /// This factory method automatically selects the correct platform implementation
 /// without exposing internal types.
 ///
+/// **Platform Selection:**
+/// - macOS: Returns MacApplication (AppKit-based)
+/// - Windows: Returns WinApplication (Win32-based)
+/// - Linux: Returns WaylandApplication or X11Application based on environment detection
+///
+/// On Linux, the backend is selected automatically:
+/// - If `WAYLAND_DISPLAY` is set: Try Wayland, fall back to X11 on failure
+/// - If `DISPLAY` is set: Use X11
+/// - If neither: Throw error (no display server detected)
+///
 /// - Throws: `LuminaError.platformError` if platform initialization fails
 /// - Returns: A new application instance ready to create windows and run the event loop
 @MainActor
-public func createLuminaApp() throws -> some LuminaApp {
+public func createLuminaApp() throws -> any LuminaApp {
     #if os(macOS)
     return try MacApplication()
     #elseif os(Windows)
     return try WinApplication()
     #elseif os(Linux)
-    return try X11Application()
+    return try createLuminaApp(.auto)
     #else
     #error("Unsupported platform")
     #endif

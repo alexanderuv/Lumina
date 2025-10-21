@@ -198,21 +198,21 @@
 ## Phase 4: Linux Wayland Implementation
 
 ### C Interop Setup
-- [ ] **T022** [P] Create CWaylandLinux module in `Sources/CInterop/CWaylandLinux/`
+- [X] **T022** [P] Create CWaylandLinux module in `Sources/CInterop/CWaylandLinux/`
   - Create `module.modulemap` with headers for wayland-client, xkbcommon
   - Create `shims.h` with Wayland helper functions
   - Add link directives for wayland-client, xkbcommon
   - Document required system packages (libwayland-dev, etc.)
 
 ### Wayland Protocols & Core Types
-- [ ] **T023** Create WaylandProtocols in new file `Sources/Lumina/Platforms/Linux/Wayland/WaylandProtocols.swift`
+- [X] **T023** Create WaylandProtocols in new file `Sources/Lumina/Platforms/Linux/Wayland/WaylandProtocols.swift`
   - Define WaylandProtocols struct tracking available protocols: hasFractionalScale, hasXdgDecoration, versions
   - Track essential protocols (xdg-shell) and optional protocols (fractional-scale, xdg-decoration)
   - Implement protocol enumeration via wl_registry listener callbacks
   - Runtime capability detection for optional protocols
 
 ### WaylandApplication Event Loop
-- [ ] **T024** Create WaylandApplication in new file `Sources/Lumina/Platforms/Linux/Wayland/WaylandApplication.swift`
+- [X] **T024** Create WaylandApplication in new file `Sources/Lumina/Platforms/Linux/Wayland/WaylandApplication.swift`
   - Mark as @MainActor conforming to LuminaApp
   - Implement init() with wl_display_connect, registry binding, protocol enumeration
   - Bind essential protocols: wl_compositor, xdg_wm_base, wl_seat
@@ -224,7 +224,7 @@
   - Error on missing essential protocols (xdg-shell v2+)
 
 ### WaylandWindow Implementation
-- [ ] **T025** Create WaylandWindow in new file `Sources/Lumina/Platforms/Linux/Wayland/WaylandWindow.swift`
+- [X] **T025** Create WaylandWindow in new file `Sources/Lumina/Platforms/Linux/Wayland/WaylandWindow.swift`
   - Mark as @MainActor conforming to LuminaWindow
   - Implement `static func create()` with wl_compositor_create_surface, xdg_wm_base_get_xdg_surface, xdg_surface_get_toplevel
   - Configure xdg_toplevel: set_title, set_min_size, set_max_size
@@ -237,7 +237,7 @@
   - Implement capabilities() returning platform-specific WindowCapabilities (transparency supported, CSD true)
 
 ### Wayland Input Translation
-- [ ] **T026** [P] Create WaylandInput in new file `Sources/Lumina/Platforms/Linux/Wayland/WaylandInput.swift`
+- [X] **T026** [P] Create WaylandInput in new file `Sources/Lumina/Platforms/Linux/Wayland/WaylandInput.swift`
   - Implement wl_pointer listener for mouse events: enter, leave, motion, button
   - Implement wl_keyboard listener for keyboard events: keymap, key, modifiers
   - Integrate libxkbcommon for keymap interpretation
@@ -245,7 +245,7 @@
   - Handle wl_seat capability detection (pointer, keyboard, touch)
 
 ### Wayland Monitor Enumeration
-- [ ] **T027** [P] Create WaylandMonitor in new file `Sources/Lumina/Platforms/Linux/Wayland/WaylandMonitor.swift`
+- [X] **T027** [P] Create WaylandMonitor in new file `Sources/Lumina/Platforms/Linux/Wayland/WaylandMonitor.swift`
   - Implement wl_output listener: geometry, mode, scale, done callbacks
   - Track output configuration: position, resolution, scale factor
   - Handle fractional scaling via wp_fractional_scale_v1 if available
@@ -253,7 +253,7 @@
   - Subscribe to output configuration changes automatically via listeners
 
 ### Wayland Clipboard
-- [ ] **T028** [P] Create WaylandClipboard in new file `Sources/Lumina/Platforms/Linux/Wayland/WaylandClipboard.swift`
+- [X] **T028** [P] Create WaylandClipboard in new file `Sources/Lumina/Platforms/Linux/Wayland/WaylandClipboard.swift`
   - Implement wl_data_device_manager protocol for clipboard
   - Implement read via wl_data_offer with MIME type negotiation (text/plain;charset=utf-8)
   - Implement write via wl_data_source with pipe-based data transfer
@@ -261,7 +261,7 @@
   - Wire to global Clipboard API via conditional compilation
 
 ### Wayland Capabilities
-- [ ] **T029** [P] Create WaylandCapabilities in new file `Sources/Lumina/Platforms/Linux/Wayland/WaylandCapabilities.swift`
+- [X] **T029** [P] Create WaylandCapabilities in new file `Sources/Lumina/Platforms/Linux/Wayland/WaylandCapabilities.swift`
   - Implement compositor capability detection from WaylandProtocols
   - Document compositor compatibility (GNOME, KDE Plasma, Sway, Weston)
   - Provide feature availability queries
@@ -270,7 +270,7 @@
 
 ## Phase 5: Linux Backend Selection
 
-- [ ] **T030** Create LinuxApplication in new file `Sources/Lumina/Platforms/Linux/LinuxApplication.swift`
+- [X] **T030** Create LinuxApplication in new file `Sources/Lumina/Platforms/Linux/LinuxApplication.swift`
   - Implement `createLuminaApp()` factory function for Linux
   - Environment-based detection: WAYLAND_DISPLAY → try WaylandApplication, fallback to X11
   - DISPLAY → X11Application
@@ -281,12 +281,12 @@
 
 ## Phase 5.5: Logging Infrastructure (swift-log Integration)
 
-- [ ] **T030a** Add swift-log dependency in Package.swift
+- [X] **T030a** Add swift-log dependency in Package.swift
   - Add `.package(url: "https://github.com/apple/swift-log.git", from: "1.5.0")` to dependencies
   - Add "Logging" product dependency to Lumina target
   - Ensure compatible with Swift 6.2+ concurrency model
 
-- [ ] **T030b** Create Logger infrastructure in new file `Sources/Lumina/Core/Logging.swift`
+- [X] **T030b** Create Logger infrastructure in new file `Sources/Lumina/Logging.swift`
   - Import Logging framework
   - Create `public struct LuminaLogger` wrapping Logger
   - Add configurable log levels: off, error, info, debug, trace (per NFR-005)
@@ -294,7 +294,7 @@
   - Include high-resolution timestamps (per NFR-007)
   - Mark as Sendable for cross-thread logging
 
-- [ ] **T030c** Integrate logging in platform implementations
+- [X] **T030c** Integrate logging in platform implementations
   - Add logger property to MacApplication, X11Application, WaylandApplication
   - Log events: window creation, focus changes, scale factor changes (per NFR-006)
   - Log state transitions: event loop mode switches, window lifecycle
@@ -397,7 +397,7 @@
 
 ## Phase 8: Package Configuration
 
-- [ ] **T042** Update Package.swift with Linux system library targets and swift-log
+- [X] **T042** Update Package.swift with Linux system library targets and swift-log
   - Set minimum Swift version: `.swiftLanguageVersions([.v6])`
   - Set platforms: `.macOS(.v15), .windows(.v11), .linux`
   - Add swift-log dependency: `.package(url: "https://github.com/apple/swift-log.git", from: "1.5.0")`
