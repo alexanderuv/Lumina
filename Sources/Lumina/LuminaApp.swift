@@ -47,16 +47,6 @@ public protocol LuminaApp: Sendable, ~Copyable {
     /// The platform-specific window type (SDL/GLFW pattern: platform-specific window structs)
     /// SDL/GLFW use non-copyable window pointers - we mirror this with ~Copyable
     associatedtype Window: LuminaWindow
-    /// Initialize the platform-specific application.
-    ///
-    /// This is where platform-specific initialization occurs, including:
-    /// - Windows: DPI awareness, COM initialization
-    /// - macOS: NSApplication setup, activation policy
-    ///
-    /// IMPORTANT: This must happen BEFORE any window creation or UI operations.
-    ///
-    /// - Throws: `LuminaError.platformError` if platform initialization fails
-    init() throws
 
     /// Run the event loop until quit (blocking).
     ///
@@ -224,18 +214,19 @@ public protocol LuminaApp: Sendable, ~Copyable {
 
 /// Create a new Lumina application instance.
 ///
+/// **DEPRECATED on Linux:** Use the new two-step initialization:
+/// ```swift
+/// let platform = try createLuminaPlatform()
+/// let app = try platform.createApp()
+/// ```
+///
 /// This factory method automatically selects the correct platform implementation
 /// without exposing internal types.
 ///
 /// **Platform Selection:**
 /// - macOS: Returns MacApplication (AppKit-based)
 /// - Windows: Returns WinApplication (Win32-based)
-/// - Linux: Returns WaylandApplication or X11Application based on environment detection
-///
-/// On Linux, the backend is selected automatically:
-/// - If `WAYLAND_DISPLAY` is set: Try Wayland, fall back to X11 on failure
-/// - If `DISPLAY` is set: Use X11
-/// - If neither: Throw error (no display server detected)
+/// - Linux: **REMOVED** - Use createLuminaPlatform() instead
 ///
 /// - Throws: `LuminaError.platformError` if platform initialization fails
 /// - Returns: A new application instance ready to create windows and run the event loop
@@ -246,7 +237,23 @@ public func createLuminaApp() throws -> any LuminaApp & ~Copyable {
     #elseif os(Windows)
     return try WinApplication()
     #elseif os(Linux)
-    return try createLuminaApp(.auto)
+    fatalError("""
+        createLuminaApp() has been removed on Linux in favor of the platform/app separation API.
+
+        Please update your code:
+
+        Old API (removed):
+            let app = try createLuminaApp()
+
+        New API (required):
+            let platform = try createLuminaPlatform()
+            let app = try platform.createApp()
+
+        The platform must outlive the application. This architectural change provides:
+        - Monitor enumeration before app creation
+        - Proper resource lifetime management
+        - Consistent API across all platforms (coming to macOS/Windows in future)
+        """)
     #else
     #error("Unsupported platform")
     #endif

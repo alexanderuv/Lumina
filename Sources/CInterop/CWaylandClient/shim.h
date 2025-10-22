@@ -47,6 +47,10 @@ static inline const struct wl_interface* lumina_wl_seat_interface(void) {
     return &wl_seat_interface;
 }
 
+static inline const struct wl_interface* lumina_wl_output_interface(void) {
+    return &wl_output_interface;
+}
+
 // User data struct for libdecor window callbacks
 // This is a plain C struct that can be safely allocated and passed to C APIs
 // SDL/GLFW pattern: Store EGL window pointer for resize in configure callback

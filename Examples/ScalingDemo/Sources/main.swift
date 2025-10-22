@@ -5,7 +5,9 @@ import Lumina
 @main
 struct ScalingDemo {
     static func main() throws {
-        var app = try createLuminaApp()
+        // NEW API: Initialize platform first, then create app
+        var platform = try createLuminaPlatform()
+        var app = try platform.createApp()
 
         let logicalSize = LogicalSize(width: 800, height: 600)
 
@@ -13,8 +15,8 @@ struct ScalingDemo {
             title: "Scaling Demo - DPI & Scale Factor",
             size: logicalSize,
             resizable: true,
-            monitor: nil
-        ).get()
+            monitor: nil as Monitor?
+        )
 
         window.show()
 

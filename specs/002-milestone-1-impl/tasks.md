@@ -246,9 +246,9 @@
 
 ### Wayland Monitor Enumeration
 - [X] **T027** [P] Create WaylandMonitor in new file `Sources/Lumina/Platforms/Linux/Wayland/WaylandMonitor.swift`
-  - Implement wl_output listener: geometry, mode, scale, done callbacks
+  - Implement wl_output listener: geometry, mode, scale, done, name, description callbacks
   - Track output configuration: position, resolution, scale factor
-  - Handle fractional scaling via wp_fractional_scale_v1 if available
+  - Handle fractional scaling via wp_fractional_scale_v1 if available (infrastructure ready)
   - Convert to Monitor structs
   - Subscribe to output configuration changes automatically via listeners
 

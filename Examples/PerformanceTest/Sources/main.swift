@@ -8,7 +8,9 @@ import Foundation
 
 @MainActor
 func measureWindowCreation() throws {
-    var app = try createLuminaApp()
+    // NEW API: Initialize platform first, then create app
+    var platform = try createLuminaPlatform()
+    var app = try platform.createApp()
 
     print("=== Lumina Performance Test ===")
     print("Requirement: Window creation < 100ms")
@@ -20,8 +22,8 @@ func measureWindowCreation() throws {
         title: "Performance Test",
         size: LogicalSize(width: 800, height: 600),
         resizable: true,
-        monitor: nil
-    ).get()
+        monitor: nil as Monitor?
+    )
     let elapsed = Date().timeIntervalSince(start) * 1000 // in ms
 
     print("Window creation time: \(String(format: "%.2f", elapsed)) ms")
@@ -39,12 +41,12 @@ func measureWindowCreation() throws {
 
     for i in 1...10 {
         let start = Date()
-        let testWindow = try app.createWindow(
+        var testWindow = try app.createWindow(
             title: "Test \(i)",
             size: LogicalSize(width: 400, height: 300),
             resizable: true,
-            monitor: nil
-        ).get()
+            monitor: nil as Monitor?
+        )
         let elapsed = Date().timeIntervalSince(start) * 1000
         times.append(elapsed)
         print("  Window \(i): \(String(format: "%.2f", elapsed)) ms")

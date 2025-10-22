@@ -7,14 +7,16 @@ import Lumina
 @main
 struct HelloWindow {
     static func main() throws {
-        var app = try createLuminaApp()
+        // NEW API: Initialize platform first, then create app
+        var platform = try createLuminaPlatform()
+        var app = try platform.createApp()
 
         var window = try app.createWindow(
             title: "Hello, Lumina!",
             size: LogicalSize(width: 1000, height: 500),
             resizable: true,
-            monitor: nil
-        ).get()
+            monitor: nil as Monitor?
+        )
 
         window.show()
 

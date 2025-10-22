@@ -41,8 +41,34 @@ struct WaylandDemo {
         print("========================================")
         #if LUMINA_WAYLAND
         print("[DEMO] LUMINA_WAYLAND is defined")
-        // Force Wayland backend - will fail if Wayland is not available
-        var app = try createLuminaApp(.wayland)
+
+        // NEW API: Initialize platform first
+        print("[DEMO] Initializing Wayland platform...")
+        var platform = try createLinuxPlatform(.wayland)
+        print("[DEMO] Platform created successfully")
+
+        // NEW: Monitor enumeration via platform (no app needed!)
+        print("[DEMO] Enumerating monitors...")
+        do {
+            let monitors = try platform.enumerateMonitors()
+            print("[DEMO] Found \(monitors.count) monitor(s):")
+            for (index, monitor) in monitors.enumerated() {
+                print("[DEMO]   [\(index)] \(monitor.name)")
+                print("[DEMO]       Position: (\(monitor.position.x), \(monitor.position.y))")
+                print("[DEMO]       Size: \(Int(monitor.size.width))×\(Int(monitor.size.height))")
+                print("[DEMO]       Scale: \(monitor.scaleFactor)x")
+                print("[DEMO]       Primary: \(monitor.isPrimary)")
+            }
+
+            let primary = try platform.primaryMonitor()
+            print("[DEMO] Primary monitor: \(primary.name)")
+        } catch {
+            print("[DEMO] ⚠️  Monitor enumeration failed: \(error)")
+        }
+
+        // NEW: Create app from platform
+        print("[DEMO] Creating application...")
+        var app = try platform.createApp()
         print("[DEMO] App created successfully")
 
         print("[DEMO] About to create window...")
@@ -50,7 +76,7 @@ struct WaylandDemo {
             title: "Wayland Demo - Native Wayland Window",
             size: LogicalSize(width: 800, height: 600),
             resizable: true,
-            monitor: nil
+            monitor: nil as Monitor?
         )
         print("[DEMO] Window createWindow() returned")
 
@@ -61,6 +87,7 @@ struct WaylandDemo {
         print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         print("✓ Lumina Wayland Demo Running")
         print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        print("✓ Platform/App separation architecture")
         print("✓ Window created with native Wayland protocols")
         print("✓ Using libdecor for decorations")
         print("✓ Light gray window should be visible")

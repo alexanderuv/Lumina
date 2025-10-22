@@ -436,25 +436,50 @@ public enum RedrawEvent: Sendable, Hashable {
 /// Monitor configuration change events.
 ///
 /// MonitorEvent notifies the application when the system's monitor configuration
-/// changes. This includes monitors being connected/disconnected, resolution
-/// changes, or DPI scaling changes.
+/// changes. This includes monitors being connected, disconnected, or having their
+/// configuration updated (resolution, DPI scaling, position, etc.).
 ///
-/// Applications should respond by re-querying monitor information using
-/// `enumerateMonitors()` and updating any monitor-dependent state.
+/// These are app-level events because they require a running process to receive
+/// notifications from the OS. Monitor enumeration itself is a platform-level
+/// operation that works before app creation.
 ///
 /// Example:
 /// ```swift
-/// if case .monitor(.configurationChanged) = event {
-///     let monitors = try enumerateMonitors()
-///     print("Monitor configuration changed: \(monitors.count) monitor(s) detected")
-///     // Update fullscreen windows, reposition windows, etc.
+/// while let event = try app.poll() {
+///     switch event {
+///     case .monitor(.connected(let monitor)):
+///         print("Monitor connected: \(monitor.name)")
+///     case .monitor(.disconnected(let monitorID)):
+///         print("Monitor disconnected: \(monitorID)")
+///     case .monitor(.configurationChanged(let monitor)):
+///         print("Monitor updated: \(monitor.name)")
+///     default:
+///         break
+///     }
 /// }
 /// ```
 public enum MonitorEvent: Sendable, Hashable {
-    /// Monitor configuration changed (connected/disconnected/resolution/DPI).
+    /// A monitor was connected to the system.
     ///
-    /// This event is sent when the system's monitor configuration changes in
-    /// any way. Applications should re-query monitor information to get the
-    /// updated configuration.
-    case configurationChanged
+    /// This event is sent when a new monitor is detected. The Monitor struct
+    /// contains the full configuration of the newly connected display.
+    ///
+    /// - Parameter monitor: The newly connected monitor
+    case connected(Monitor)
+
+    /// A monitor was disconnected from the system.
+    ///
+    /// This event is sent when a monitor is removed. The MonitorID can be used
+    /// to identify which monitor was removed if you're tracking monitor state.
+    ///
+    /// - Parameter monitorID: ID of the disconnected monitor
+    case disconnected(MonitorID)
+
+    /// A monitor's configuration changed (resolution, DPI, position, etc.).
+    ///
+    /// This event is sent when an existing monitor's properties change, such as
+    /// resolution, scale factor, or position in a multi-monitor setup.
+    ///
+    /// - Parameter monitor: The monitor with updated configuration
+    case configurationChanged(Monitor)
 }
