@@ -25,18 +25,23 @@ private final class EventQueue: @unchecked Sendable {
 ///
 /// This implementation provides a Linux X11 backend using XCB (X protocol C-Binding)
 /// for window management and event processing. It handles:
-/// - XCB connection and screen setup
 /// - Event loop with wait/poll/waitUntil modes
 /// - Window registry for event routing
 /// - XKB keyboard support via libxkbcommon
 /// - Thread-safe user event posting
 ///
-/// **Do not instantiate this type directly.** Use `createLuminaApp()` instead.
+/// **Architecture:**
+/// - Borrows XCB connection from X11Platform
+/// - Platform owns the connection and screen
+/// - Application manages windows and event loop
+///
+/// **Internal:** Only X11Platform can create applications.
 ///
 /// Example:
 /// ```swift
 /// #if os(Linux)
-/// var app = try createLuminaApp()  // Returns X11Application on X11 systems
+/// let platform = try X11Platform()
+/// var app = try platform.createApp()
 /// let window = try app.createWindow(
 ///     title: "Hello X11",
 ///     size: LogicalSize(width: 800, height: 600),
@@ -51,14 +56,13 @@ private final class EventQueue: @unchecked Sendable {
 struct X11Application: LuminaApp {
     public typealias Window = X11Window
 
-    /// XCB connection to X server
-    private let connection: OpaquePointer
+    // MARK: - Platform Reference
 
-    /// Default screen for window creation
-    private let screen: UnsafeMutablePointer<xcb_screen_t>
-
-    /// Screen number
-    private let screenNumber: Int32
+    /// Strong reference to platform (keeps it alive)
+    ///
+    /// The platform owns the XCB connection and must outlive the app.
+    /// This strong reference ensures proper lifetime management.
+    private let platform: X11Platform
 
     /// Cached X11 atoms for window manager communication
     private let atoms: X11Atoms
@@ -93,90 +97,34 @@ struct X11Application: LuminaApp {
     /// Callback invoked when a window is closed
     private var onWindowClosed: WindowCloseCallback?
 
-    /// Initialize X11 application and connect to X server.
+    /// Initialize X11 application from platform.
     ///
-    /// This performs the following initialization:
-    /// 1. Connect to X server via XCB
-    /// 2. Query default screen
-    /// 3. Cache required X11 atoms
-    /// 4. Initialize XKB for keyboard support
+    /// The platform provides the XCB connection and screen.
+    /// This initialization performs:
+    /// 1. Cache required X11 atoms
+    /// 2. Initialize XKB for keyboard support
     ///
+    /// **Internal:** Only X11Platform can create applications.
+    ///
+    /// - Parameter platform: The X11Platform that owns the connection
     /// - Throws: `LuminaError.platformError` if X11 initialization fails
-    init() throws {
+    init(platform: X11Platform) throws {
+        self.platform = platform
+
         // Initialize logger first
         self.logger = LuminaLogger.makeLogger(label: "com.lumina.x11")
-        logger.logInfo("Initializing X11 application")
+        logger.logInfo("Initializing X11 application from platform")
 
-        // Connect to X server (DISPLAY environment variable)
-        var screenNum: Int32 = 0
-        logger.logPlatformCall("xcb_connect()")
-        guard let conn = xcb_connect(nil, &screenNum) else {
-            logger.logError("Failed to connect to X server (is DISPLAY set?)")
-            throw LuminaError.platformError(
-                platform: "Linux/X11",
-                operation: "xcb_connect",
-                code: -1,
-                message: "Failed to connect to X server (is DISPLAY set?)"
-            )
-        }
-
-        // Check for connection errors
-        let connectionError = xcb_connection_has_error_shim(conn)
-        guard connectionError == 0 else {
-            logger.logError("XCB connection error: code = \(connectionError)")
-            xcb_disconnect(conn)
-            throw LuminaError.platformError(
-                platform: "Linux/X11",
-                operation: "xcb_connect",
-                code: Int(connectionError),
-                message: "XCB connection error"
-            )
-        }
-
-        logger.logPlatformCall("xcb_connect() successful, screen = \(screenNum)")
-        self.connection = conn
-        self.screenNumber = screenNum
-
-        // Get setup and screen
-        logger.logPlatformCall("xcb_get_setup()")
-        guard let setup = xcb_get_setup_shim(conn) else {
-            logger.logError("Failed to get X11 setup")
-            xcb_disconnect(conn)
-            throw LuminaError.platformError(
-                platform: "Linux/X11",
-                operation: "xcb_get_setup",
-                code: -1,
-                message: "Failed to get X11 setup"
-            )
-        }
-
-        var screenIter = xcb_setup_roots_iterator_shim(setup)
-        for _ in 0..<screenNum {
-            xcb_screen_next(&screenIter)
-        }
-
-        guard let screen = screenIter.data else {
-            logger.logError("Failed to get default screen")
-            xcb_disconnect(conn)
-            throw LuminaError.platformError(
-                platform: "Linux/X11",
-                operation: "xcb_screen",
-                code: -1,
-                message: "Failed to get default screen"
-            )
-        }
-
-        self.screen = screen
-        logger.logPlatformCall("xcb_get_setup() successful")
+        // Access platform resources
+        let connection = platform.xcbConnection
 
         // Cache atoms
         do {
             logger.logPlatformCall("Caching X11 atoms")
-            self.atoms = try X11Atoms.cache(connection: conn)
+            self.atoms = try X11Atoms.cache(connection: connection)
             logger.logPlatformCall("X11 atoms cached successfully")
         } catch {
             logger.logError("Failed to cache X11 atoms", error: error)
-            xcb_disconnect(conn)
             throw error
         }
 
@@ -185,7 +133,6 @@ struct X11Application: LuminaApp {
         let XKB_CONTEXT_NO_FLAGS = xkb_context_flags(rawValue: 0)
         guard let xkbCtx = xkb_context_new(XKB_CONTEXT_NO_FLAGS) else {
             logger.logError("Failed to create XKB context")
-            xcb_disconnect(conn)
             throw LuminaError.platformError(
                 platform: "Linux/X11",
                 operation: "xkb_context_new",
@@ -201,7 +148,7 @@ struct X11Application: LuminaApp {
         let xkbMinor: UInt16 = 0
         logger.logPlatformCall("xkb_x11_setup_xkb_extension(v\(xkbMajor).\(xkbMinor))")
         let setupResult = xkb_x11_setup_xkb_extension(
-            conn,
+            connection,
             xkbMajor,
             xkbMinor,
             XKB_X11_SETUP_XKB_EXTENSION_NO_FLAGS,
@@ -211,18 +158,16 @@ struct X11Application: LuminaApp {
         guard setupResult != 0 else {
             logger.logError("XKB extension setup failed")
             xkb_context_unref(xkbCtx)
-            xcb_disconnect(conn)
             throw LuminaError.x11ExtensionMissing(extension: "XKB extension (xkb_x11_setup_xkb_extension failed)")
         }
         logger.logCapabilityDetection("XKB extension available: v\(xkbMajor).\(xkbMinor)")
 
         // Get XKB device ID
         logger.logPlatformCall("xkb_x11_get_core_keyboard_device_id()")
-        self.xkbDeviceID = xkb_x11_get_core_keyboard_device_id(conn)
+        self.xkbDeviceID = xkb_x11_get_core_keyboard_device_id(connection)
         guard xkbDeviceID != -1 else {
             logger.logError("Failed to get XKB core keyboard device")
             xkb_context_unref(xkbCtx)
-            xcb_disconnect(conn)
             throw LuminaError.x11ExtensionMissing(extension: "XKB core keyboard device")
         }
         logger.logCapabilityDetection("XKB device ID: \(xkbDeviceID)")
@@ -230,10 +175,9 @@ struct X11Application: LuminaApp {
         // Create XKB keymap and state from X11 device
         logger.logPlatformCall("xkb_x11_keymap_new_from_device()")
         let XKB_KEYMAP_COMPILE_NO_FLAGS = xkb_keymap_compile_flags(rawValue: 0)
-        guard let keymap = xkb_x11_keymap_new_from_device(xkbCtx, conn, xkbDeviceID, XKB_KEYMAP_COMPILE_NO_FLAGS) else {
+        guard let keymap = xkb_x11_keymap_new_from_device(xkbCtx, connection, xkbDeviceID, XKB_KEYMAP_COMPILE_NO_FLAGS) else {
             logger.logError("Failed to create XKB keymap")
             xkb_context_unref(xkbCtx)
-            xcb_disconnect(conn)
             throw LuminaError.platformError(
                 platform: "Linux/X11",
                 operation: "xkb_x11_keymap_new_from_device",
@@ -243,11 +187,10 @@ struct X11Application: LuminaApp {
         }
 
         logger.logPlatformCall("xkb_x11_state_new_from_device()")
-        guard let state = xkb_x11_state_new_from_device(keymap, conn, xkbDeviceID) else {
+        guard let state = xkb_x11_state_new_from_device(keymap, connection, xkbDeviceID) else {
             logger.logError("Failed to create XKB state")
             xkb_keymap_unref(keymap)
             xkb_context_unref(xkbCtx)
-            xcb_disconnect(conn)
             throw LuminaError.platformError(
                 platform: "Linux/X11",
                 operation: "xkb_x11_state_new_from_device",
@@ -262,7 +205,7 @@ struct X11Application: LuminaApp {
 
         // Flush connection to ensure all setup requests are sent
         logger.logPlatformCall("xcb_flush()")
-        _ = xcb_flush_shim(conn)
+        _ = xcb_flush_shim(connection)
 
         logger.logStateTransition("X11 application initialized successfully")
     }
@@ -295,6 +238,8 @@ struct X11Application: LuminaApp {
 
     mutating func pumpEvents(mode: ControlFlowMode) -> Event? {
         logger.logDebug("pumpEvents: mode = \(mode)")
+
+        let connection = platform.xcbConnection
 
         // Check if we have queued events first (from wait() or postUserEvent)
         if let queuedEvent = eventQueue.removeFirst() {
@@ -450,8 +395,8 @@ struct X11Application: LuminaApp {
 
                 logger.logEvent("Window close requested: id = \(windowID)")
                 logger.logPlatformCall("xcb_destroy_window()")
-                xcb_destroy_window(connection, ptr.pointee.window)
-                _ = xcb_flush_shim(connection)
+                xcb_destroy_window(platform.xcbConnection, ptr.pointee.window)
+                _ = xcb_flush_shim(platform.xcbConnection)
                 windowRegistry.unregister(ptr.pointee.window)
                 onWindowClosed?(windowID)
 
@@ -519,8 +464,8 @@ struct X11Application: LuminaApp {
         logger.logEvent("Creating window: title = '\(title)', size = \(size), resizable = \(resizable)")
 
         let window = try X11Window.create(
-            connection: connection,
-            screen: screen,
+            connection: platform.xcbConnection,
+            screen: platform.xcbScreen,
             atoms: atoms,
             title: title,
             size: size,

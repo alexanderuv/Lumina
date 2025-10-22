@@ -88,11 +88,23 @@ public struct Monitor: Sendable, Hashable {
     /// let monitors = try Monitor.all()
     /// print("Found \(monitors.count) monitor(s)")
     /// ```
+    @MainActor
     public static func all() throws -> [Monitor] {
         #if os(Windows)
         return try WinMonitor.enumerateMonitors()
         #elseif os(macOS)
         return try MacMonitor.enumerateMonitors()
+        #elseif os(Linux)
+        throw LuminaError.invalidState("""
+            Monitor.all() is not supported on Linux with the new platform/app separation API.
+
+            Please use the platform instance method instead:
+
+                let platform = try createLuminaPlatform()
+                let monitors = try platform.enumerateMonitors()
+
+            This architectural change provides proper resource lifetime management.
+            """)
         #else
         throw LuminaError.platformNotSupported(operation: "Monitor enumeration")
         #endif
@@ -108,11 +120,23 @@ public struct Monitor: Sendable, Hashable {
     /// let primary = try Monitor.primary()
     /// print("Primary monitor: \(primary.name)")
     /// ```
+    @MainActor
     public static func primary() throws -> Monitor {
         #if os(Windows)
         return try WinMonitor.primaryMonitor()
         #elseif os(macOS)
         return try MacMonitor.primaryMonitor()
+        #elseif os(Linux)
+        throw LuminaError.invalidState("""
+            Monitor.primary() is not supported on Linux with the new platform/app separation API.
+
+            Please use the platform instance method instead:
+
+                let platform = try createLuminaPlatform()
+                let primary = try platform.primaryMonitor()
+
+            This architectural change provides proper resource lifetime management.
+            """)
         #else
         throw LuminaError.platformNotSupported(operation: "Monitor detection")
         #endif

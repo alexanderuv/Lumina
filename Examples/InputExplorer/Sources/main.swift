@@ -12,13 +12,15 @@ import Foundation
 @main
 struct InputExplorer {
     static func main() throws {
-        var app = try createLuminaApp()
+        // NEW API: Initialize platform first, then create app
+        var platform = try createLuminaPlatform()
+        var app = try platform.createApp()
 
         var window = try app.createWindow(
             title: "Input Explorer - All M0 Events",
             size: LogicalSize(width: 600, height: 400),
             resizable: true,
-            monitor: nil
+            monitor: nil as Monitor?
         )
 
         window.show()

@@ -5,7 +5,7 @@ import CWaylandClient
 /// Wayland implementation of LuminaApp using libdecor for window decorations.
 ///
 /// Architecture:
-/// - Display connection via wl_display_connect()
+/// - Borrows wl_display connection from WaylandPlatform
 /// - libdecor context for automatic SSD/CSD decoration handling
 /// - wl_seat for input device management
 /// - Event loop: libdecor_dispatch → wl_display_dispatch → wl_display_flush
@@ -13,8 +13,16 @@ import CWaylandClient
 /// Thread Safety: All methods must be called from @MainActor.
 /// Uses @unchecked Sendable wrapper for mutable state accessed from C callbacks.
 @MainActor
-public struct WaylandApplication: LuminaApp, ~Copyable {
+public final class WaylandApplication: LuminaApp {
     public typealias Window = WaylandWindow
+
+    // MARK: - Platform Reference
+
+    /// Strong reference to platform (keeps it alive)
+    ///
+    /// The platform owns the wl_display connection and must outlive the app.
+    /// This strong reference ensures proper lifetime management.
+    private let platform: WaylandPlatform
     /// Wrapper for mutable state accessed from C callbacks.
     ///
     /// SAFETY: @unchecked Sendable because all mutations happen on main thread via
@@ -47,14 +55,17 @@ public struct WaylandApplication: LuminaApp, ~Copyable {
 
     // MARK: - Core Wayland Resources
 
-    private let display: OpaquePointer
-    private var decorContext: OpaquePointer?
-    private var decorInterface: UnsafeMutablePointer<libdecor_interface>?
+    /// **Concurrency:** nonisolated(unsafe) allows access from deinit
+    private nonisolated(unsafe) var decorContext: OpaquePointer?
+    /// **Concurrency:** nonisolated(unsafe) allows access from deinit
+    private nonisolated(unsafe) var decorInterface: UnsafeMutablePointer<libdecor_interface>?
 
     /// Shared interface for all windows
-    private var frameInterface: UnsafeMutablePointer<libdecor_frame_interface>?
+    /// **Concurrency:** nonisolated(unsafe) allows access from deinit
+    private nonisolated(unsafe) var frameInterface: UnsafeMutablePointer<libdecor_frame_interface>?
 
-    private var registry: OpaquePointer?
+    /// **Concurrency:** nonisolated(unsafe) allows access from deinit
+    private nonisolated(unsafe) var registry: OpaquePointer?
     private var inputState: WaylandInputState?
 
     // MARK: - Event Loop State
@@ -72,26 +83,19 @@ public struct WaylandApplication: LuminaApp, ~Copyable {
 
     // MARK: - Initialization
 
-    /// Initialize Wayland application.
+    /// Initialize Wayland application from platform.
     ///
-    /// Connects to the display and initializes input handling.
+    /// The platform provides the wl_display connection and monitor tracker.
     /// Global interfaces and libdecor are initialized later on first use.
     ///
+    /// **Internal:** Only WaylandPlatform can create applications.
+    ///
+    /// - Parameter platform: The WaylandPlatform that owns the display connection
     /// - Throws: LuminaError.platformError if initialization fails
-    public init() throws {
+    internal init(platform: WaylandPlatform) throws {
+        self.platform = platform
         self.logger = LuminaLogger(label: "com.lumina.wayland", level: .info)
-        logger.logEvent("Initializing Wayland application")
-
-        guard let display = wl_display_connect(nil) else {
-            throw LuminaError.platformError(
-                platform: "Wayland",
-                operation: "wl_display_connect",
-                code: -1,
-                message: "Failed to connect to Wayland display. Is WAYLAND_DISPLAY set?"
-            )
-        }
-        self.display = display
-        logger.logPlatformCall("wl_display_connect() -> \(display)")
+        logger.logEvent("Initializing Wayland application from platform")
 
         self.inputState = WaylandInputState()
         logger.logEvent("Input handling initialized")
@@ -116,7 +120,7 @@ public struct WaylandApplication: LuminaApp, ~Copyable {
             wl_registry_destroy(registry)
         }
 
-        wl_display_disconnect(display)
+        // Note: wl_display is owned by platform and will be cleaned up in platform.deinit
     }
 
     /// Complete initialization by binding to global Wayland interfaces.
@@ -129,7 +133,9 @@ public struct WaylandApplication: LuminaApp, ~Copyable {
     /// 5. Set up sync callback for libdecor readiness
     ///
     /// - Throws: LuminaError if initialization fails
-    private mutating func completeInitialization() throws {
+    private func completeInitialization() throws {
+        let display = platform.displayConnection
+
         guard let registry = wl_display_get_registry(display) else {
             throw LuminaError.platformError(
                 platform: "Wayland",
@@ -221,7 +227,7 @@ public struct WaylandApplication: LuminaApp, ~Copyable {
 
     // MARK: - Event Loop (LuminaApp Protocol)
 
-    public mutating func run() throws {
+    public func run() throws {
         // Complete initialization if not already done
         if registry == nil {
             try completeInitialization()
@@ -240,7 +246,7 @@ public struct WaylandApplication: LuminaApp, ~Copyable {
         logger.logEvent("Event loop terminated")
     }
 
-    public mutating func poll() throws -> Event? {
+    public func poll() throws -> Event? {
         // Complete initialization if not already done
         if registry == nil {
             try completeInitialization()
@@ -249,7 +255,7 @@ public struct WaylandApplication: LuminaApp, ~Copyable {
         return pumpEvents(mode: .poll)
     }
 
-    public mutating func wait() throws {
+    public func wait() throws {
         // Complete initialization if not already done
         if registry == nil {
             try completeInitialization()
@@ -258,7 +264,9 @@ public struct WaylandApplication: LuminaApp, ~Copyable {
         _ = pumpEvents(mode: .wait)
     }
 
-    public mutating func pumpEvents(mode: ControlFlowMode) -> Event? {
+    public func pumpEvents(mode: ControlFlowMode) -> Event? {
+        let display = platform.displayConnection
+
         // libdecor integration requires:
         // 1. Call libdecor_dispatch() to process any pending decoration events
         // 2. Read/dispatch Wayland events
@@ -275,6 +283,12 @@ public struct WaylandApplication: LuminaApp, ~Copyable {
         case .poll:
             // Non-blocking: dispatch only pending events
             while wl_display_dispatch_pending(display) > 0 { }
+
+            // CRITICAL: Flush outgoing requests to compositor (GLFW pattern)
+            // Without this, window resizes and other state changes won't be sent!
+            // GLFW does this in both poll and wait modes before polling the fd.
+            _ = wl_display_flush(display)
+
             // Process libdecor events that were triggered by the Wayland events
             if let decorContext = decorContext {
                 libdecor_dispatch(decorContext, 0)
@@ -390,7 +404,8 @@ public struct WaylandApplication: LuminaApp, ~Copyable {
     }
 
     /// Check for Wayland display protocol errors and handle recovery.
-    private mutating func checkDisplayError() {
+    private func checkDisplayError() {
+        let display = platform.displayConnection
         let errorCode = wl_display_get_error(display)
         if errorCode != 0 {
             var interface: UnsafePointer<wl_interface>?
@@ -410,7 +425,7 @@ public struct WaylandApplication: LuminaApp, ~Copyable {
     ///
     /// This should be called after operations that change window state (map, fullscreen, etc.)
     /// to allow libdecor to process the state change before entering the main event loop.
-    internal mutating func dispatchDecorEvents() {
+    internal func dispatchDecorEvents() {
         // Non-blocking dispatch - process any pending decoration events
         // Note: libdecor_dispatch internally calls wl_display_dispatch_pending,
         // so we don't need to call it again here
@@ -419,11 +434,11 @@ public struct WaylandApplication: LuminaApp, ~Copyable {
         }
 
         // Flush outgoing requests
-        _ = wl_display_flush(display)
+        _ = wl_display_flush(platform.displayConnection)
     }
 
     /// Process a single event (placeholder for application logic).
-    private mutating func processEvent(_ event: Event) {
+    private func processEvent(_ event: Event) {
         // This is where application event handlers would go
         // For now, just handle window close events
         switch event {
@@ -443,7 +458,7 @@ public struct WaylandApplication: LuminaApp, ~Copyable {
 
     // MARK: - Window Management
 
-    public mutating func createWindow(
+    public func createWindow(
         title: String,
         size: LogicalSize,
         resizable: Bool,
@@ -453,6 +468,8 @@ public struct WaylandApplication: LuminaApp, ~Copyable {
         if registry == nil {
             try completeInitialization()
         }
+
+        let display = platform.displayConnection
 
         // Ensure required globals are available
         logger.logEvent("Checking compositor: \(state.compositor != nil)")
@@ -505,7 +522,7 @@ public struct WaylandApplication: LuminaApp, ~Copyable {
 
     // MARK: - Application Control
 
-    public mutating func quit() {
+    public func quit() {
         shouldQuit = true
         logger.logEvent("Application quit requested")
     }
@@ -650,9 +667,13 @@ internal class WaylandApplicationContext {
                 setupSeatListener(seat: seat)
             }
 
+        case "wl_output":
+            // wl_output is handled by WaylandPlatform, not the application
+            // We ignore it here to avoid double-binding
+            logger.logEvent("Ignoring wl_output (handled by WaylandPlatform)")
+
         default:
             // We do NOT bind xdg_wm_base manually - libdecor handles xdg-shell internally.
-            // Other protocols (wl_output for monitors, etc.) will be handled later.
             break
         }
     }
@@ -693,8 +714,11 @@ private func registryGlobalRemoveCallback(
     registry: OpaquePointer?,
     name: UInt32
 ) {
-    // Handle global removal (monitor disconnection, etc.)
-    // For now, we don't need to handle this
+    guard let userData = userData else { return }
+    let context = Unmanaged<WaylandApplicationContext>.fromOpaque(userData).takeUnretainedValue()
+
+    // Monitor removal is handled by WaylandPlatform
+    // Other global removals can be handled here in the future
 }
 
 /// C callback for libdecor ready sync
