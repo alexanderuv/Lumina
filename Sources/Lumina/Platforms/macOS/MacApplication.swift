@@ -65,8 +65,8 @@ private final class WindowEventQueue: @unchecked Sendable {
 /// This type is public only because Swift requires it for protocol extensions.
 /// It should be treated as an implementation detail.
 @MainActor
-struct MacApplication: LuminaApp {
-    typealias Window = MacWindow
+public final class MacApplication: LuminaApp {
+    public typealias Window = MacWindow
     private var shouldQuit: Bool = false
     private let userEventQueue = UserEventQueue()
     private let windowEventQueue = WindowEventQueue()
@@ -90,13 +90,19 @@ struct MacApplication: LuminaApp {
     /// Last clipboard change count for hasChanged tracking
     private var lastChangeCount: Int = 0
 
+    /// Strong reference to platform for lifetime management
+    /// Platform must outlive the application
+    private let platform: MacPlatform
+
     /// Whether the application should quit when the last window is closed.
-    var exitOnLastWindowClosed: Bool {
+    public var exitOnLastWindowClosed: Bool {
         get { appDelegate.exitOnLastWindowClosed }
         set { appDelegate.exitOnLastWindowClosed = newValue }
     }
 
-    init() throws {
+    init(platform: MacPlatform) throws {
+        // Store platform reference for lifetime management
+        self.platform = platform
         // Initialize logger
         self.logger = LuminaLogger.makeLogger(label: "com.lumina.macos")
         logger.logInfo("Initializing macOS application")
@@ -149,7 +155,7 @@ struct MacApplication: LuminaApp {
         NSApp.mainMenu = mainMenu
     }
 
-    mutating func run() throws {
+    public func run() throws {
         shouldQuit = false
         logger.logStateTransition("Event loop started: mode = run (blocking)")
 
@@ -174,7 +180,7 @@ struct MacApplication: LuminaApp {
         logger.logStateTransition("Event loop exited")
     }
 
-    mutating func poll() throws -> Event? {
+    public func poll() throws -> Event? {
         // Loop until we find a translatable event or run out of events
         while true {
             // Check for pending NSEvents (non-blocking)
@@ -236,7 +242,7 @@ struct MacApplication: LuminaApp {
     }
 
     /// Poll for a single window event from the queue.
-    private mutating func pollWindowEvent() -> Event? {
+    private func pollWindowEvent() -> Event? {
         let pendingEvents = windowEventQueue.removeAll()
         guard let windowEvent = pendingEvents.first else {
             return nil
@@ -251,7 +257,7 @@ struct MacApplication: LuminaApp {
     }
 
     /// Poll for a single user event from the queue.
-    private mutating func pollUserEvent() -> Event? {
+    private func pollUserEvent() -> Event? {
         let pendingEvents = userEventQueue.removeAll()
         guard let userEvent = pendingEvents.first else {
             return nil
@@ -265,7 +271,7 @@ struct MacApplication: LuminaApp {
         return .user(userEvent)
     }
 
-    mutating func wait() throws {
+    public func wait() throws {
         // Use CFRunLoop for low-power wait
         // This will block until an event arrives, then return without processing it
         CFRunLoopRunInMode(CFRunLoopMode.defaultMode, .infinity, true)
@@ -274,7 +280,7 @@ struct MacApplication: LuminaApp {
         processUserEvents()
     }
 
-    mutating func pumpEvents(mode: ControlFlowMode) -> Event? {
+    public func pumpEvents(mode: ControlFlowMode) -> Event? {
         logger.logDebug("pumpEvents: mode = \(mode)")
 
         // Determine timeout based on control flow mode
@@ -358,7 +364,7 @@ struct MacApplication: LuminaApp {
     }
 
     /// Mark a window as needing redraw
-    internal mutating func markWindowNeedsRedraw(_ windowID: WindowID) {
+    internal func markWindowNeedsRedraw(_ windowID: WindowID) {
         redrawRequests.insert(windowID)
 
         // Wake up the event loop
@@ -378,7 +384,7 @@ struct MacApplication: LuminaApp {
         }
     }
 
-    static func monitorCapabilities() -> MonitorCapabilities {
+    public static func monitorCapabilities() -> MonitorCapabilities {
         // macOS supports ProMotion (dynamic refresh rate) on newer MacBook Pros
         // and Studio Display. Also supports fractional scaling through Retina modes.
         let logger = LuminaLogger(label: "com.lumina.macos", level: .debug)
@@ -389,7 +395,7 @@ struct MacApplication: LuminaApp {
         )
     }
 
-    static func clipboardCapabilities() -> ClipboardCapabilities {
+    public static func clipboardCapabilities() -> ClipboardCapabilities {
         // macOS supports text clipboard via NSPasteboard
         // Images and HTML support is future work
         let logger = LuminaLogger(label: "com.lumina.macos", level: .debug)
@@ -401,7 +407,7 @@ struct MacApplication: LuminaApp {
         )
     }
 
-    func postUserEvent(_ event: UserEvent) {
+    public func postUserEvent(_ event: UserEvent) {
         // Thread-safe enqueue
         userEventQueue.append(event)
 
@@ -427,7 +433,7 @@ struct MacApplication: LuminaApp {
         }
     }
 
-    mutating func createWindow(
+    public func createWindow(
         title: String,
         size: LogicalSize,
         resizable: Bool,
@@ -479,11 +485,11 @@ struct MacApplication: LuminaApp {
         return macWindow
     }
 
-    mutating func setWindowCloseCallback(_ callback: @escaping WindowCloseCallback) {
+    func setWindowCloseCallback(_ callback: @escaping WindowCloseCallback) {
         onWindowClosed = callback
     }
 
-    mutating func quit() {
+    public func quit() {
         logger.logStateTransition("Application quit requested")
 
         // Request application termination
@@ -515,7 +521,7 @@ struct MacApplication: LuminaApp {
     ///
     /// - Returns: true if any user events were processed
     @discardableResult
-    private mutating func processUserEvents() -> Bool {
+    private func processUserEvents() -> Bool {
         let pendingEvents = userEventQueue.removeAll()
 
         guard !pendingEvents.isEmpty else {
@@ -532,11 +538,5 @@ struct MacApplication: LuminaApp {
         return true
     }
 }
-
-// MARK: - Sendable Conformance
-
-// MacApplication is @MainActor isolated, so it's safe to conform to Sendable
-// The userEventLock protects the shared mutable state (userEventQueue)
-extension MacApplication: @unchecked Sendable {}
 
 #endif

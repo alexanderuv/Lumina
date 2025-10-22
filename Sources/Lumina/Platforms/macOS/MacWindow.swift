@@ -32,14 +32,21 @@ private final class MacWindowDelegate: NSObject, NSWindowDelegate {
 /// bottom-left origin, Lumina uses top-left), DPI scaling, and window state
 /// management.
 @MainActor
-internal struct MacWindow: LuminaWindow {
-    let id: WindowID
+public final class MacWindow: LuminaWindow {
+    public let id: WindowID
     private var nsWindow: NSWindow
     private var delegate: MacWindowDelegate
 
     /// Expose the NSWindow's window number for event routing.
     internal var windowNumber: Int {
         nsWindow.windowNumber
+    }
+
+    /// Private initializer - use create() instead
+    private init(id: WindowID, nsWindow: NSWindow, delegate: MacWindowDelegate) {
+        self.id = id
+        self.nsWindow = nsWindow
+        self.delegate = delegate
     }
 
     /// Create a new macOS window.
@@ -129,23 +136,23 @@ internal struct MacWindow: LuminaWindow {
         return macWindow
     }
 
-    mutating func show() {
+    public func show() {
         nsWindow.makeKeyAndOrderFront(nil)
     }
 
-    mutating func hide() {
+    public func hide() {
         nsWindow.orderOut(nil)
     }
 
-    consuming func close() {
+    public consuming func close() {
         nsWindow.close()
     }
 
-    mutating func setTitle(_ title: String) {
+    public func setTitle(_ title: String) {
         nsWindow.title = title
     }
 
-    func size() -> LogicalSize {
+    public func size() -> LogicalSize {
         let contentSize = nsWindow.contentRect(forFrameRect: nsWindow.frame).size
         return LogicalSize(
             width: Float(contentSize.width),
@@ -153,7 +160,7 @@ internal struct MacWindow: LuminaWindow {
         )
     }
 
-    mutating func resize(_ size: LogicalSize) {
+    public func resize(_ size: LogicalSize) {
         let currentFrame = nsWindow.frame
         let currentContentRect = nsWindow.contentRect(forFrameRect: currentFrame)
 
@@ -172,7 +179,7 @@ internal struct MacWindow: LuminaWindow {
         nsWindow.setFrame(newFrame, display: true, animate: false)
     }
 
-    func position() -> LogicalPosition {
+    public func position() -> LogicalPosition {
         // AppKit uses bottom-left origin, Lumina uses top-left
         // Convert from AppKit screen coordinates to top-left origin
 
@@ -193,7 +200,7 @@ internal struct MacWindow: LuminaWindow {
         )
     }
 
-    mutating func moveTo(_ position: LogicalPosition) {
+    public func moveTo(_ position: LogicalPosition) {
         // Convert from Lumina's top-left origin to AppKit's bottom-left origin
 
         let screen = nsWindow.screen ?? NSScreen.main!
@@ -212,7 +219,7 @@ internal struct MacWindow: LuminaWindow {
         nsWindow.setFrameOrigin(newOrigin)
     }
 
-    mutating func setMinSize(_ size: LogicalSize?) {
+    public func setMinSize(_ size: LogicalSize?) {
         if let size = size {
             nsWindow.contentMinSize = NSSize(
                 width: CGFloat(size.width),
@@ -224,7 +231,7 @@ internal struct MacWindow: LuminaWindow {
         }
     }
 
-    mutating func setMaxSize(_ size: LogicalSize?) {
+    public func setMaxSize(_ size: LogicalSize?) {
         if let size = size {
             nsWindow.contentMaxSize = NSSize(
                 width: CGFloat(size.width),
@@ -239,15 +246,15 @@ internal struct MacWindow: LuminaWindow {
         }
     }
 
-    mutating func requestFocus() {
+    public func requestFocus() {
         nsWindow.makeKeyAndOrderFront(nil)
     }
 
-    func scaleFactor() -> Float {
+    public func scaleFactor() -> Float {
         Float(nsWindow.backingScaleFactor)
     }
 
-    mutating func requestRedraw() {
+    public func requestRedraw() {
         // Mark the content view as needing display
         nsWindow.contentView?.setNeedsDisplay(nsWindow.contentView!.bounds)
 
@@ -256,7 +263,7 @@ internal struct MacWindow: LuminaWindow {
         // For now, we rely on NSView's setNeedsDisplay which triggers display events
     }
 
-    mutating func setDecorated(_ decorated: Bool) throws {
+    public func setDecorated(_ decorated: Bool) throws {
         if decorated {
             // Add decorations
             var styleMask = nsWindow.styleMask
@@ -268,7 +275,7 @@ internal struct MacWindow: LuminaWindow {
         }
     }
 
-    mutating func setAlwaysOnTop(_ alwaysOnTop: Bool) throws {
+    public func setAlwaysOnTop(_ alwaysOnTop: Bool) throws {
         if alwaysOnTop {
             nsWindow.level = .floating
         } else {
@@ -276,13 +283,13 @@ internal struct MacWindow: LuminaWindow {
         }
     }
 
-    mutating func setTransparent(_ transparent: Bool) throws {
+    public func setTransparent(_ transparent: Bool) throws {
         nsWindow.isOpaque = !transparent
         nsWindow.backgroundColor = transparent ? .clear : .windowBackgroundColor
         nsWindow.hasShadow = !transparent
     }
 
-    func capabilities() -> WindowCapabilities {
+    public func capabilities() -> WindowCapabilities {
         // macOS supports all Wave B features except client-side decorations
         return WindowCapabilities(
             supportsTransparency: true,
@@ -292,7 +299,7 @@ internal struct MacWindow: LuminaWindow {
         )
     }
 
-    func currentMonitor() throws -> Monitor {
+    public func currentMonitor() throws -> Monitor {
         // Get the screen this window is on
         guard let screen = nsWindow.screen else {
             throw LuminaError.monitorEnumerationFailed(reason: "Window has no associated screen")
@@ -322,7 +329,7 @@ internal struct MacWindow: LuminaWindow {
         throw LuminaError.monitorEnumerationFailed(reason: "No monitors found")
     }
 
-    func cursor() -> any LuminaCursor {
+    public func cursor() -> any LuminaCursor {
         return MacCursor()
     }
 }
