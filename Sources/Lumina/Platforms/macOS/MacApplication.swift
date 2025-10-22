@@ -66,6 +66,7 @@ private final class WindowEventQueue: @unchecked Sendable {
 /// It should be treated as an implementation detail.
 @MainActor
 struct MacApplication: LuminaApp {
+    typealias Window = MacWindow
     private var shouldQuit: Bool = false
     private let userEventQueue = UserEventQueue()
     private let windowEventQueue = WindowEventQueue()
@@ -277,16 +278,17 @@ struct MacApplication: LuminaApp {
         logger.logDebug("pumpEvents: mode = \(mode)")
 
         // Determine timeout based on control flow mode
-        let timeout: Date = switch mode {
+        let timeout: Date 
+        switch mode {
         case .wait:
             logger.logStateTransition("Event loop mode: wait (blocking)")
-            return .distantFuture
+            timeout = Date.distantFuture
         case .poll:
             logger.logStateTransition("Event loop mode: poll (non-blocking)")
-            return .distantPast
+            timeout = Date.distantPast
         case .waitUntil(let deadline):
             logger.logStateTransition("Event loop mode: waitUntil (deadline = \(deadline.date))")
-            return deadline.internalDate
+            timeout = deadline.internalDate
         }
 
         // Check for redraw requests first (priority handling)
@@ -430,7 +432,7 @@ struct MacApplication: LuminaApp {
         size: LogicalSize,
         resizable: Bool,
         monitor: Monitor?
-    ) throws -> LuminaWindow {
+    ) throws -> MacWindow {
         logger.logEvent("Creating window: title = '\(title)', size = \(size), resizable = \(resizable)")
 
         // Capture windowEventQueue for posting close events
@@ -474,7 +476,7 @@ struct MacApplication: LuminaApp {
         windowRegistry.register(macWindow.windowNumber, id: macWindow.id)
         logger.logEvent("Window created successfully: id = \(macWindow.id), windowNumber = \(macWindow.windowNumber)")
 
-        return macWindow as LuminaWindow
+        return macWindow
     }
 
     mutating func setWindowCloseCallback(_ callback: @escaping WindowCloseCallback) {
