@@ -36,22 +36,37 @@ import Lumina
 @main
 struct WaylandDemo {
     static func main() throws {
+        print("========================================")
+        print("WaylandDemo main() ENTRY")
+        print("========================================")
         #if LUMINA_WAYLAND
+        print("[DEMO] LUMINA_WAYLAND is defined")
         // Force Wayland backend - will fail if Wayland is not available
         var app = try createLuminaApp(.wayland)
+        print("[DEMO] App created successfully")
 
+        print("[DEMO] About to create window...")
         var window = try app.createWindow(
             title: "Wayland Demo - Native Wayland Window",
             size: LogicalSize(width: 800, height: 600),
             resizable: true,
             monitor: nil
         )
+        print("[DEMO] Window createWindow() returned")
 
+        print("[DEMO] Window created, about to call show()")
         window.show()
+        print("[DEMO] show() returned")
 
-        print("✓ Running on Wayland backend")
-        print("✓ This window is using native Wayland protocols")
-        print("✓ Press Ctrl+C or close the window to exit")
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        print("✓ Lumina Wayland Demo Running")
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        print("✓ Window created with native Wayland protocols")
+        print("✓ Using libdecor for decorations")
+        print("✓ Light gray window should be visible")
+        print("✓ Try resizing the window!")
+        print("✓ Close button shows it's working (use Ctrl+C to exit)")
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
         try app.run()
         #else

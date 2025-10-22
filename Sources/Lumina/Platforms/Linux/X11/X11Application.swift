@@ -49,6 +49,8 @@ private final class EventQueue: @unchecked Sendable {
 /// ```
 @MainActor
 struct X11Application: LuminaApp {
+    public typealias Window = X11Window
+
     /// XCB connection to X server
     private let connection: OpaquePointer
 
@@ -504,9 +506,8 @@ struct X11Application: LuminaApp {
         // TODO: Wake up event loop if blocked (requires pipe or similar mechanism)
     }
 
-    func quit() {
-        var mutableSelf = self
-        mutableSelf.shouldQuit = true
+    mutating func quit() {
+        shouldQuit = true
     }
 
     mutating func createWindow(
@@ -514,7 +515,7 @@ struct X11Application: LuminaApp {
         size: LogicalSize,
         resizable: Bool,
         monitor: Monitor?
-    ) throws -> LuminaWindow {
+    ) throws -> X11Window {
         logger.logEvent("Creating window: title = '\(title)', size = \(size), resizable = \(resizable)")
 
         let window = try X11Window.create(

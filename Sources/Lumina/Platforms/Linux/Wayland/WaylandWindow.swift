@@ -1,62 +1,49 @@
-#if os(Linux)
+#if os(Linux) && LUMINA_WAYLAND
 import CWaylandClient
 import Foundation
 import Glibc
 
 /// Wayland implementation of LuminaWindow using libdecor.
 ///
-/// This implementation provides window management on Linux Wayland systems using
-/// the libdecor library for automatic server-side/client-side decoration handling.
-/// It follows the SDL3/GLFW pattern where libdecor is the primary decoration path,
-/// providing compatibility with all Wayland compositors (GNOME, KDE, Sway, Weston, etc.).
+/// Provides window management on Linux Wayland systems using libdecor for
+/// automatic server-side/client-side decoration handling, providing compatibility
+/// with all Wayland compositors (GNOME, KDE, Sway, Weston, etc.).
 ///
-/// **Architecture:**
-/// - Uses `libdecor_frame` instead of raw `xdg_toplevel` for window management
-/// - libdecor automatically selects SSD (via xdg-decoration) or CSD (manual rendering)
-/// - Integrates with WaylandApplication's libdecor event loop via `libdecor_dispatch()`
-/// - Manages `wl_surface` for rendering content via shared memory buffers
+/// Architecture:
+/// - Uses `libdecor_frame` for window management
+/// - libdecor automatically selects SSD or CSD decorations
+/// - Integrates with WaylandApplication's libdecor event loop
+/// - Manages `wl_surface` for rendering content
 ///
-/// **Do not instantiate this type directly.** Windows are created through
+/// Do not instantiate this type directly. Windows are created through
 /// `LuminaApp.createWindow()`.
-///
-/// Example:
-/// ```swift
-/// var app = try createLuminaApp(.wayland)
-/// var window = try app.createWindow(
-///     title: "Wayland Window",
-///     size: LogicalSize(width: 800, height: 600),
-///     resizable: true,
-///     monitor: nil
-/// ).get()
-/// window.show()
-/// ```
-///
-/// References:
-/// - [libdecor architecture](https://xeechou.net/posts/libdecor/)
-/// - [SDL3 Wayland backend](https://github.com/libsdl-org/SDL/tree/main/src/video/wayland)
-/// - [GLFW Wayland backend](https://github.com/glfw/glfw/tree/master/src)
 @MainActor
 public struct WaylandWindow: LuminaWindow {
     /// Unique Lumina window ID
     public let id: WindowID
 
-    /// libdecor frame (owns decoration logic)
-    private let frame: OpaquePointer
+    /// libdecor frame (owns decoration logic) - created on show(), not create()
+    /// Lazy creation avoids showing windows in taskbar before show()
+    private var frame: OpaquePointer?
 
-    /// Wayland surface (content rendering)
     private let surface: OpaquePointer
-
-    /// Wayland compositor (for creating surfaces)
     private let compositor: OpaquePointer
+    private let decorContext: OpaquePointer
+    private let display: OpaquePointer
+    private let shm: OpaquePointer
 
-    /// Shared memory pool for buffer allocation
-    private let shmPool: OpaquePointer?
-
-    /// Current buffer attached to surface
-    private var buffer: OpaquePointer?
+    /// EGL window for GPU-accelerated rendering
+    /// Users can create OpenGL/Vulkan contexts on this later
+    private var eglWindow: OpaquePointer?
 
     /// Current window size (logical coordinates)
     private var currentSize: LogicalSize
+
+    /// Initial window title (stored until frame is created)
+    private let title: String
+
+    /// Whether window is resizable
+    private let resizable: Bool
 
     /// Whether window is currently visible
     private var isVisible: Bool = false
@@ -71,35 +58,45 @@ public struct WaylandWindow: LuminaWindow {
     /// Note: This is stored as an opaque pointer to avoid circular dependencies
     private weak var application: AnyObject?
 
-    /// User data pointer for libdecor callbacks (C struct, must be freed on window close)
-    private let userDataPtr: UnsafeMutablePointer<LuminaWindowUserData>
+    /// User data pointer for libdecor callbacks (C struct) - created on show()
+    private var userDataPtr: UnsafeMutablePointer<LuminaWindowUserData>?
 
-    /// Frame interface struct pointer (heap-allocated, must be released on window close)
-    private let frameInterfacePtr: UnsafeMutablePointer<libdecor_frame_interface>
+    /// Shared frame interface from application (one interface for all windows)
+    /// NOT owned by this window - managed by WaylandApplication
+    private let frameInterface: UnsafeMutablePointer<libdecor_frame_interface>
+
+    private let inputState: WaylandInputState?
 
     /// Create a new Wayland window using libdecor.
     ///
-    /// This is an internal method called by WaylandApplication.createWindow().
+    /// Internal method called by WaylandApplication.createWindow().
     ///
     /// - Parameters:
     ///   - decorContext: libdecor context from application
+    ///   - frameInterface: Shared libdecor frame interface (one for all windows)
+    ///   - display: wl_display from application
     ///   - compositor: wl_compositor for creating surfaces
-    ///   - shm: wl_shm for shared memory buffer allocation
+    ///   - shm: wl_shm for buffer creation
     ///   - title: Window title
     ///   - size: Initial logical size
     ///   - resizable: Whether window can be resized
     ///   - application: Reference to application for event posting
+    ///   - inputState: Input state for surface registration
     /// - Returns: Newly created window
     /// - Throws: `LuminaError.windowCreationFailed` if creation fails
     static func create(
         decorContext: OpaquePointer,
+        frameInterface: UnsafeMutablePointer<libdecor_frame_interface>,
+        display: OpaquePointer,
         compositor: OpaquePointer,
         shm: OpaquePointer,
         title: String,
         size: LogicalSize,
         resizable: Bool,
-        application: AnyObject?
+        application: AnyObject?,
+        inputState: WaylandInputState?
     ) throws -> WaylandWindow {
+        debugPrint("!!!!! [WaylandWindow.create] ENTRY - Function called !!!!!")
         // 1. Create Wayland surface
         guard let surface = wl_compositor_create_surface(compositor) else {
             throw LuminaError.windowCreationFailed(
@@ -107,154 +104,188 @@ public struct WaylandWindow: LuminaWindow {
             )
         }
 
-        // 2. Create shared memory pool for rendering buffers
-        // This is a simplified implementation - production code would use a proper buffer pool
-        let stride = Int32(size.width) * 4  // ARGB8888 format (4 bytes per pixel)
-        let bufferSize = stride * Int32(size.height)
-
-        // Create anonymous file for shared memory
-        let fd = createAnonymousFile(size: Int(bufferSize))
-        guard fd >= 0 else {
-            wl_surface_destroy(surface)
-            throw LuminaError.windowCreationFailed(
-                reason: "Failed to create shared memory file"
-            )
-        }
-
-        // Create wl_shm_pool
-        guard let pool = wl_shm_create_pool(shm, fd, bufferSize) else {
-            _ = Glibc.close(fd)
-            wl_surface_destroy(surface)
-            throw LuminaError.windowCreationFailed(
-                reason: "Failed to create wl_shm_pool"
-            )
-        }
-
-        // Create buffer from pool
-        let buffer = wl_shm_pool_create_buffer(
-            pool,
-            0,  // offset
+        // 2. Create EGL window for GPU-accelerated rendering
+        guard let eglWindow = wl_egl_window_create(
+            surface,
             Int32(size.width),
-            Int32(size.height),
-            stride,
-            WL_SHM_FORMAT_ARGB8888.rawValue
-        )
-
-        _ = Glibc.close(fd)
-
-        if buffer == nil {
-            wl_shm_pool_destroy(pool)
+            Int32(size.height)
+        ) else {
             wl_surface_destroy(surface)
             throw LuminaError.windowCreationFailed(
-                reason: "Failed to create wl_buffer"
+                reason: "Failed to create wl_egl_window"
             )
         }
+        debugPrint("!!!!! [WaylandWindow.create] Created EGL window: \(eglWindow)")
 
-        // 3. Set up libdecor frame interface callbacks
-        // These callbacks are invoked by libdecor to handle configure events, close requests, etc.
+        // 3. Set opaque region - tells compositor the surface is fully opaque
+        let region = wl_compositor_create_region(compositor)
+        if let region = region {
+            wl_region_add(region, 0, 0, Int32(size.width), Int32(size.height))
+            wl_surface_set_opaque_region(surface, region)
+            wl_region_destroy(region)
+        }
+
+        // 4. Generate window ID (libdecor frame will be created later in show())
         let windowID = WindowID()
 
-        // Create user data to pass to callbacks (C struct)
-        let userDataPtr = UnsafeMutablePointer<LuminaWindowUserData>.allocate(capacity: 1)
-        withUnsafeBytes(of: windowID.id.uuid) { uuidBytes in
-            let high = uuidBytes.load(fromByteOffset: 0, as: UInt64.self)
-            let low = uuidBytes.load(fromByteOffset: 8, as: UInt64.self)
-            userDataPtr.pointee = LuminaWindowUserData(
-                window_id_high: high,
-                window_id_low: low,
-                current_width: Float(size.width),
-                current_height: Float(size.height)
-            )
+        // 5. Register surface with input system for event routing
+        if let inputState = inputState {
+            inputState.registerSurface(surface, windowID: windowID)
+            debugPrint("!!!!! [WaylandWindow.create] Surface registered with input system !!!!!")
         }
 
-        // Configure libdecor_frame_interface using C helper
-        // Swift automatically bridges these closures to C function pointers
-        guard let frameInterfacePtr = lumina_alloc_frame_interface(
-            { frame, configuration, userData in
-                handleConfigure(frame: frame, configuration: configuration, userData: userData)
-            },
-            { frame, userData in
-                handleClose(frame: frame, userData: userData)
-            },
-            { frame, userData in
-                handleCommit(frame: frame, userData: userData)
-            }
-        ) else {
-            wl_buffer_destroy(buffer)
-            wl_shm_pool_destroy(pool)
-            wl_surface_destroy(surface)
-            userDataPtr.deallocate()
-            throw LuminaError.windowCreationFailed(
-                reason: "Failed to allocate libdecor_frame_interface"
-            )
-        }
-
-        // 4. Create libdecor frame (replaces xdg-surface + xdg-toplevel)
-        guard let frame = libdecor_decorate(
-            decorContext,
-            surface,
-            frameInterfacePtr,
-            userDataPtr
-        ) else {
-            wl_buffer_destroy(buffer)
-            wl_shm_pool_destroy(pool)
-            wl_surface_destroy(surface)
-            // Free the C struct user data since frame creation failed
-            userDataPtr.deallocate()
-            // Free the interface pointer using C helper
-            lumina_free_frame_interface(frameInterfacePtr)
-            throw LuminaError.windowCreationFailed(
-                reason: "Failed to create libdecor_frame"
-            )
-        }
-
-        // 5. Set window properties
-        libdecor_frame_set_title(frame, title)
-        libdecor_frame_set_app_id(frame, "com.lumina.app")
-
-        // Set min/max size constraints if not resizable
-        if !resizable {
-            libdecor_frame_set_min_content_size(
-                frame,
-                Int32(size.width),
-                Int32(size.height)
-            )
-            libdecor_frame_set_max_content_size(
-                frame,
-                Int32(size.width),
-                Int32(size.height)
-            )
-        }
-
-        // 6. Attach buffer to surface for initial render
-        wl_surface_attach(surface, buffer, 0, 0)
-        wl_surface_damage(surface, 0, 0, Int32.max, Int32.max)
-        wl_surface_commit(surface)
-
-        // 7. Create and return WaylandWindow (frameInterfacePtr must be stored to keep it alive)
-        return WaylandWindow(
+        // 6. Create and return WaylandWindow (frame creation deferred to show())
+        debugPrint("!!!!! [WaylandWindow.create] About to create struct !!!!!")
+        let window = WaylandWindow(
             id: windowID,
-            frame: frame,
+            frame: nil,
             surface: surface,
             compositor: compositor,
-            shmPool: pool,
-            buffer: buffer,
+            decorContext: decorContext,
+            display: display,
+            shm: shm,
+            eglWindow: eglWindow,
             currentSize: size,
+            title: title,
+            resizable: resizable,
             isVisible: false,
             minSize: resizable ? nil : size,
             maxSize: resizable ? nil : size,
             application: application,
-            userDataPtr: userDataPtr,
-            frameInterfacePtr: frameInterfacePtr
+            userDataPtr: nil,
+            frameInterface: frameInterface,
+            inputState: inputState
         )
+        debugPrint("!!!!! [WaylandWindow.create] Struct created, returning !!!!!")
+        return window
     }
 
     // MARK: - LuminaWindow Protocol Implementation
 
     public mutating func show() {
-        // Map the libdecor frame (makes window visible)
-        libdecor_frame_map(frame)
+        print("[SHOW] WaylandWindow.show() called!")
+
+        // Create libdecor frame on first show
+        if frame == nil {
+            print("[SHOW] Creating libdecor frame")
+
+            // Detach any buffers and commit before creating frame
+            wl_surface_attach(surface, nil, 0, 0)
+            wl_surface_commit(surface)
+
+            // Create user data for callbacks
+            let userDataPtr = UnsafeMutablePointer<LuminaWindowUserData>.allocate(capacity: 1)
+            withUnsafeBytes(of: id.id.uuid) { uuidBytes in
+                let high = uuidBytes.load(fromByteOffset: 0, as: UInt64.self)
+                let low = uuidBytes.load(fromByteOffset: 8, as: UInt64.self)
+                userDataPtr.pointee = LuminaWindowUserData(
+                    window_id_high: high,
+                    window_id_low: low,
+                    current_width: Float(currentSize.width),
+                    current_height: Float(currentSize.height),
+                    egl_window: eglWindow,
+                    surface: surface,
+                    shm: shm,
+                    compositor: compositor,
+                    configured: false
+                )
+            }
+            self.userDataPtr = userDataPtr
+            print("[SHOW] User data allocated (configured = false)")
+
+            // Use shared frame interface from application
+            // All windows share the same interface; window identification via userData
+            print("[SHOW] Using shared frame interface from application")
+
+            // Wait for libdecor to be ready before decorating
+            // This ensures libdecor has finished receiving all globals
+            print("[SHOW] About to check application context...")
+            print("[SHOW] Application is: \(String(describing: application))")
+            if let appContext = application as? WaylandApplicationContext {
+                print("[SHOW] Successfully cast to WaylandApplicationContext")
+                print("[SHOW] Checking libdecorReady: \(appContext.state.libdecorReady)")
+                print("[SHOW] Waiting for libdecor to be ready...")
+                while !appContext.state.libdecorReady {
+                    // Dispatch Wayland events (this will trigger the sync callback)
+                    _ = wl_display_dispatch(display)
+                    _ = libdecor_dispatch(decorContext, 0)
+                }
+                print("[SHOW] libdecor is ready!")
+            } else {
+                print("[SHOW] WARNING: Could not access application context, skipping ready wait")
+            }
+
+            print("[SHOW] About to call libdecor_decorate()")
+
+            // Create libdecor frame using shared interface
+            let frame = libdecor_decorate(
+                decorContext,
+                surface,
+                frameInterface,  // Shared interface from application
+                userDataPtr      // Window-specific userData for callbacks
+            )
+            print("[SHOW] libdecor_decorate() returned: \(String(describing: frame))")
+
+            guard let frame = frame else {
+                userDataPtr.deallocate()
+                // Note: Do NOT free frameInterface - it's shared and owned by application
+                print("[SHOW] ERROR: Failed to create libdecor frame")
+                return
+            }
+            self.frame = frame
+            print("[SHOW] Frame assigned successfully")
+
+            // Set window properties BEFORE mapping
+            libdecor_frame_set_title(frame, title)
+            libdecor_frame_set_app_id(frame, "com.lumina.app")
+
+            // Set capabilities before mapping
+            let capabilities = LIBDECOR_ACTION_MOVE.rawValue |
+                              LIBDECOR_ACTION_RESIZE.rawValue |
+                              LIBDECOR_ACTION_CLOSE.rawValue
+            libdecor_frame_set_capabilities(frame, libdecor_capabilities(rawValue: capabilities))
+
+            // Set size constraints if not resizable
+            if !resizable {
+                libdecor_frame_set_min_content_size(frame, Int32(currentSize.width), Int32(currentSize.height))
+                libdecor_frame_set_max_content_size(frame, Int32(currentSize.width), Int32(currentSize.height))
+            }
+
+            // Map frame to make window visible
+            libdecor_frame_map(frame)
+            print("[SHOW] Mapped libdecor frame")
+
+            // Wait for configure callback - compositor must send configure before window shows
+            print("[SHOW] Waiting for configure callback...")
+            while !userDataPtr.pointee.configured {
+                // Dispatch libdecor events (this will trigger configure callback)
+                let dispatchResult = libdecor_dispatch(decorContext, 0)
+                if dispatchResult < 0 {
+                    print("[SHOW] ERROR: libdecor_dispatch failed with code \(dispatchResult)")
+                    userDataPtr.deallocate()
+                    return
+                }
+
+                // Also dispatch Wayland events
+                _ = wl_display_dispatch_pending(display)
+            }
+            print("[SHOW] Configure callback received! Window is now configured.")
+
+            // CRITICAL: Dispatch libdecor one more time to trigger the commit callback
+            // After libdecor_frame_commit() is called in configure, libdecor needs
+            // another dispatch cycle to actually invoke our commit callback
+            print("[SHOW] Dispatching libdecor to trigger commit callback...")
+            _ = libdecor_dispatch(decorContext, 0)
+            _ = wl_display_dispatch_pending(display)
+
+            // Also flush to ensure commit is sent to compositor
+            _ = wl_display_flush(display)
+
+            print("[SHOW] Post-configure dispatch complete")
+        }
+
         isVisible = true
+        print("[SHOW] Window show() complete - configure callback will handle final setup")
     }
 
     public mutating func hide() {
@@ -267,23 +298,28 @@ public struct WaylandWindow: LuminaWindow {
 
     public consuming func close() {
         // Clean up resources in reverse order of creation
-        if let buffer = buffer {
-            wl_buffer_destroy(buffer)
+        if let eglWindow = eglWindow {
+            wl_egl_window_destroy(eglWindow)
         }
-        if let pool = shmPool {
-            wl_shm_pool_destroy(pool)
+
+        // Clean up libdecor frame if it was created
+        if let frame = frame {
+            libdecor_frame_unref(frame)
         }
-        libdecor_frame_unref(frame)
+
         wl_surface_destroy(surface)
 
-        // Free the C struct user data
-        userDataPtr.deallocate()
+        // Free the C struct user data if allocated
+        if let userDataPtr = userDataPtr {
+            userDataPtr.deallocate()
+        }
 
-        // Free the frame interface pointer using C helper
-        lumina_free_frame_interface(frameInterfacePtr)
+        // Note: frameInterface is NOT owned by this window - managed by WaylandApplication
+        // Do not free it here
     }
 
     public mutating func setTitle(_ title: String) {
+        guard let frame = frame else { return }
         libdecor_frame_set_title(frame, title)
         // Commit the change
         libdecor_frame_commit(frame, nil, nil)
@@ -294,37 +330,18 @@ public struct WaylandWindow: LuminaWindow {
     }
 
     public mutating func resize(_ size: LogicalSize) {
-        // Update current size
         currentSize = size
 
-        // Recreate buffer with new size
-        let stride = Int32(size.width) * 4
-        _ = stride * Int32(size.height)  // bufferSize calculated but not used in simplified implementation
-
-        // Create new buffer
-        if let pool = shmPool {
-            // Destroy old buffer
-            if let oldBuffer = buffer {
-                wl_buffer_destroy(oldBuffer)
-            }
-
-            // Create new buffer from pool
-            // Note: This is simplified - production code would resize the pool if needed
-            buffer = wl_shm_pool_create_buffer(
-                pool,
-                0,
+        // Resize EGL window - compositor handles buffer allocation automatically
+        if let eglWindow = eglWindow {
+            wl_egl_window_resize(
+                eglWindow,
                 Int32(size.width),
                 Int32(size.height),
-                stride,
-                WL_SHM_FORMAT_ARGB8888.rawValue
+                0,
+                0
             )
-
-            // Attach new buffer
-            if let newBuffer = buffer {
-                wl_surface_attach(surface, newBuffer, 0, 0)
-                wl_surface_damage(surface, 0, 0, Int32.max, Int32.max)
-                wl_surface_commit(surface)
-            }
+            print("[RESIZE] EGL window resized to \(size.width)x\(size.height)")
         }
     }
 
@@ -342,6 +359,7 @@ public struct WaylandWindow: LuminaWindow {
 
     public mutating func setMinSize(_ size: LogicalSize?) {
         minSize = size
+        guard let frame = frame else { return }
         if let size = size {
             libdecor_frame_set_min_content_size(
                 frame,
@@ -357,6 +375,7 @@ public struct WaylandWindow: LuminaWindow {
 
     public mutating func setMaxSize(_ size: LogicalSize?) {
         maxSize = size
+        guard let frame = frame else { return }
         if let size = size {
             libdecor_frame_set_max_content_size(
                 frame,
@@ -385,7 +404,8 @@ public struct WaylandWindow: LuminaWindow {
     }
 
     public mutating func requestRedraw() {
-        // Damage the entire surface to trigger redraw
+        // With EGL rendering, redrawing is handled by the rendering context (OpenGL/Vulkan)
+        // We just damage the surface to tell the compositor to refresh
         wl_surface_damage(surface, 0, 0, Int32.max, Int32.max)
         wl_surface_commit(surface)
 
@@ -438,129 +458,7 @@ public struct WaylandWindow: LuminaWindow {
     }
 }
 
-// MARK: - libdecor Frame Callbacks
-
-// User data is defined as a C struct in CWaylandClient/shim.h (LuminaWindowUserData)
-// This keeps the FFI boundary clean and avoids Swift reference counting issues
-//
-// Callbacks are passed as closures directly to lumina_alloc_frame_interface()
-// Swift automatically bridges non-capturing closures to C function pointers
-
-/// Handle configure event from libdecor
-private func handleConfigure(
-    frame: OpaquePointer?,
-    configuration: OpaquePointer?,
-    userData: UnsafeMutableRawPointer?
-) {
-    guard let frame = frame,
-          let configuration = configuration,
-          let userData = userData else {
-        return
-    }
-
-    let userDataPtr = userData.assumingMemoryBound(to: LuminaWindowUserData.self)
-
-    // Get configured size from libdecor
-    var width: Int32 = 0
-    var height: Int32 = 0
-
-    // Query content size from configuration
-    if !libdecor_configuration_get_content_size(
-        configuration,
-        frame,
-        &width,
-        &height
-    ) {
-        // No size specified, use current size from user data
-        width = Int32(userDataPtr.pointee.current_width)
-        height = Int32(userDataPtr.pointee.current_height)
-    }
-
-    // Update current size in user data
-    userDataPtr.pointee.current_width = Float(width)
-    userDataPtr.pointee.current_height = Float(height)
-
-    // Create libdecor state with new size
-    let state = libdecor_state_new(width, height)
-    defer { libdecor_state_free(state) }
-
-    // Commit the configuration
-    libdecor_frame_commit(frame, state, configuration)
-
-    // TODO: Post window resized event to application
-}
-
-/// Handle close request from libdecor (user clicked close button)
-private func handleClose(
-    frame: OpaquePointer?,
-    userData: UnsafeMutableRawPointer?
-) {
-    guard let userData = userData else {
-        return
-    }
-
-    let userDataPtr = userData.assumingMemoryBound(to: LuminaWindowUserData.self)
-    // Window ID is available in userDataPtr.pointee.window_id_high/low
-
-    // TODO: Post window close event to application
-}
-
-/// Handle commit request from libdecor
-private func handleCommit(
-    frame: OpaquePointer?,
-    userData: UnsafeMutableRawPointer?
-) {
-    // This callback indicates that the frame is ready to commit
-    // Usually we would commit the surface here, but we already commit
-    // in resize() and other operations
-}
-
-// MARK: - Helper Functions
-
-/// Create an anonymous file for shared memory
-///
-/// Creates a temporary file in memory (using memfd_create on Linux) for use
-/// with wl_shm. This is the standard pattern for Wayland buffer allocation.
-///
-/// - Parameter size: Size of the file in bytes
-/// - Returns: File descriptor, or -1 on error
-private func createAnonymousFile(size: Int) -> Int32 {
-    // Try memfd_create (Linux 3.17+)
-    #if os(Linux)
-    let fd = memfd_create("lumina-shm", 0)
-    if fd >= 0 {
-        if ftruncate(fd, off_t(size)) == 0 {
-            return fd
-        }
-        _ = Glibc.close(fd)
-    }
-    #endif
-
-    // Fallback: use /tmp
-    let template = "/tmp/lumina-shm-XXXXXX"
-    return template.withCString { templatePtr in
-        // Create mutable copy of template
-        var mutableTemplate = [CChar](repeating: 0, count: Int(strlen(templatePtr)) + 1)
-        strcpy(&mutableTemplate, templatePtr)
-
-        let fd = mkstemp(&mutableTemplate)
-        if fd >= 0 {
-            // Unlink immediately so file is deleted when closed
-            unlink(mutableTemplate)
-
-            if ftruncate(fd, off_t(size)) == 0 {
-                return fd
-            }
-            _ = Glibc.close(fd)
-        }
-        return -1
-    }
-}
-
-// MARK: - Wayland C API Helpers
-
-/// Helper to create memfd file descriptor
-@_silgen_name("memfd_create")
-private func memfd_create(_ name: UnsafePointer<CChar>, _ flags: UInt32) -> Int32
+// NOTE: libdecor frame callbacks are now defined in WaylandApplication.swift
+// to avoid duplicate symbol issues when passing them to lumina_alloc_frame_interface()
 
 #endif // os(Linux)

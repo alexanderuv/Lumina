@@ -94,7 +94,7 @@ public enum LinuxBackend {
 /// - Returns: A LuminaApp instance backed by the requested or detected backend
 /// - Throws: LuminaError if the backend is unavailable or initialization fails
 @MainActor
-public func createLuminaApp(_ backend: LinuxBackend = .auto) throws -> any LuminaApp {
+public func createLuminaApp(_ backend: LinuxBackend = .auto) throws -> any LuminaApp & ~Copyable {
     let environment = ProcessInfo.processInfo.environment
 
     // Handle .auto by inlining detection logic

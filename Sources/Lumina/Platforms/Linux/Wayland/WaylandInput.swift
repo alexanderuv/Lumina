@@ -12,10 +12,10 @@ import Foundation
 /// - Surface-to-WindowID mapping for event routing
 /// - Text input generation from XKB state
 ///
-/// The architecture follows SDL3/GLFW patterns:
+/// Architecture:
 /// - XKB context for keyboard layout interpretation
 /// - Frame-based pointer event coalescing
-/// - Proper modifier key state tracking
+/// - Modifier key state tracking
 /// - Safe C callback bridging via Unmanaged
 ///
 /// Example usage:
@@ -60,6 +60,42 @@ final class WaylandInputState {
         var pointerX: Float = 0.0
         var pointerY: Float = 0.0
         var hasPendingMotion = false
+
+        /// Persistent listener structs (must remain alive for Wayland object lifetime)
+        /// CRITICAL: These CANNOT be stack-allocated or they become dangling pointers.
+        /// use static const structs; Swift stores them as instance variables.
+        var seatListener: wl_seat_listener
+        var pointerListener: wl_pointer_listener
+        var keyboardListener: wl_keyboard_listener
+
+        init() {
+            // Initialize listener structs with C callback function pointers
+            self.seatListener = wl_seat_listener(
+                capabilities: seatCapabilitiesCallback,
+                name: seatNameCallback
+            )
+            self.pointerListener = wl_pointer_listener(
+                enter: pointerEnterCallback,
+                leave: pointerLeaveCallback,
+                motion: pointerMotionCallback,
+                button: pointerButtonCallback,
+                axis: pointerAxisCallback,
+                frame: pointerFrameCallback,
+                axis_source: pointerAxisSourceCallback,
+                axis_stop: pointerAxisStopCallback,
+                axis_discrete: pointerAxisDiscreteCallback,
+                axis_value120: nil,
+                axis_relative_direction: nil
+            )
+            self.keyboardListener = wl_keyboard_listener(
+                keymap: keyboardKeymapCallback,
+                enter: keyboardEnterCallback,
+                leave: keyboardLeaveCallback,
+                key: keyboardKeyCallback,
+                modifiers: keyboardModifiersCallback,
+                repeat_info: keyboardRepeatInfoCallback
+            )
+        }
     }
 
     /// Mutable state wrapper (fileprivate so nonisolated callbacks can access it)
@@ -140,12 +176,12 @@ final class WaylandInputState {
 
     /// Lookup WindowID from wl_surface pointer.
     ///
-    /// SAFETY: This is nonisolated(unsafe) because it's called from Wayland input callbacks
+    /// SAFETY: This is nonisolated because it's called from Wayland input callbacks
     /// that run synchronously on the main thread during wl_display_dispatch().
     ///
     /// - Parameter surface: The wl_surface pointer
     /// - Returns: The WindowID, or nil if not registered
-    nonisolated(unsafe) fileprivate func windowID(for surface: OpaquePointer?) -> WindowID? {
+    nonisolated fileprivate func windowID(for surface: OpaquePointer?) -> WindowID? {
         guard let surface = surface else { return nil }
         let surfaceID = UInt(bitPattern: surface)
         return state.surfaceToWindowID[surfaceID]
@@ -165,11 +201,11 @@ final class WaylandInputState {
 
     /// Enqueue a translated event for delivery to the application.
     ///
-    /// SAFETY: This is nonisolated(unsafe) because it's called from Wayland input callbacks
+    /// SAFETY: This is nonisolated because it's called from Wayland input callbacks
     /// that run synchronously on the main thread during wl_display_dispatch().
     ///
     /// - Parameter event: The event to enqueue
-    nonisolated(unsafe) fileprivate func enqueueEvent(_ event: Event) {
+    nonisolated fileprivate func enqueueEvent(_ event: Event) {
         state.eventQueue.append(event)
     }
 
@@ -179,15 +215,18 @@ final class WaylandInputState {
     ///
     /// This must be called when a wl_seat global is advertised by the compositor.
     ///
+    /// SAFETY: This is nonisolated because it only sets up C callback pointers,
+    /// which is safe from any thread. The callbacks themselves run on the main thread.
+    ///
     /// - Parameter seat: The wl_seat object to listen to
-    func setupSeatListener(_ seat: OpaquePointer) {
-        var listener = wl_seat_listener(
-            capabilities: seatCapabilitiesCallback,
-            name: seatNameCallback
-        )
-
+    nonisolated func setupSeatListener(_ seat: OpaquePointer) {
+        // CRITICAL: Listener struct is stored in State (not stack-allocated!)
+        // Wayland holds a pointer to this struct, so it must remain alive
+        // use static const structs; we store as instance variable
         let userData = Unmanaged.passUnretained(self).toOpaque()
-        wl_seat_add_listener(seat, &listener, userData)
+        withUnsafeMutablePointer(to: &state.seatListener) { listenerPtr in
+            wl_seat_add_listener(seat, listenerPtr, userData)
+        }
     }
 }
 
@@ -274,22 +313,12 @@ extension WaylandInputState {
     ///
     /// - Parameter pointer: The wl_pointer object to listen to
     nonisolated fileprivate func setupPointerListener(_ pointer: OpaquePointer) {
-        var listener = wl_pointer_listener(
-            enter: pointerEnterCallback,
-            leave: pointerLeaveCallback,
-            motion: pointerMotionCallback,
-            button: pointerButtonCallback,
-            axis: pointerAxisCallback,
-            frame: pointerFrameCallback,
-            axis_source: pointerAxisSourceCallback,
-            axis_stop: pointerAxisStopCallback,
-            axis_discrete: pointerAxisDiscreteCallback,
-            axis_value120: nil,
-            axis_relative_direction: nil
-        )
-
+        // CRITICAL: Listener struct is stored in State (not stack-allocated!)
+        // Wayland holds a pointer to this struct, so it must remain alive
         let userData = Unmanaged.passUnretained(self).toOpaque()
-        wl_pointer_add_listener(pointer, &listener, userData)
+        withUnsafeMutablePointer(to: &state.pointerListener) { listenerPtr in
+            wl_pointer_add_listener(pointer, listenerPtr, userData)
+        }
     }
 }
 
@@ -502,17 +531,12 @@ extension WaylandInputState {
     ///
     /// - Parameter keyboard: The wl_keyboard object to listen to
     nonisolated fileprivate func setupKeyboardListener(_ keyboard: OpaquePointer) {
-        var listener = wl_keyboard_listener(
-            keymap: keyboardKeymapCallback,
-            enter: keyboardEnterCallback,
-            leave: keyboardLeaveCallback,
-            key: keyboardKeyCallback,
-            modifiers: keyboardModifiersCallback,
-            repeat_info: keyboardRepeatInfoCallback
-        )
-
+        // CRITICAL: Listener struct is stored in State (not stack-allocated!)
+        // Wayland holds a pointer to this struct, so it must remain alive
         let userData = Unmanaged.passUnretained(self).toOpaque()
-        wl_keyboard_add_listener(keyboard, &listener, userData)
+        withUnsafeMutablePointer(to: &state.keyboardListener) { listenerPtr in
+            wl_keyboard_add_listener(keyboard, listenerPtr, userData)
+        }
     }
 }
 

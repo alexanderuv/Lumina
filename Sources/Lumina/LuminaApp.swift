@@ -43,7 +43,10 @@ internal typealias WindowCloseCallback = @MainActor (WindowID) -> Void
 /// Thread Safety: All methods must be called from the main thread (@MainActor).
 /// The postUserEvent method is the only exception - it's thread-safe.
 @MainActor
-public protocol LuminaApp: Sendable {
+public protocol LuminaApp: Sendable, ~Copyable {
+    /// The platform-specific window type (SDL/GLFW pattern: platform-specific window structs)
+    /// SDL/GLFW use non-copyable window pointers - we mirror this with ~Copyable
+    associatedtype Window: LuminaWindow
     /// Initialize the platform-specific application.
     ///
     /// This is where platform-specific initialization occurs, including:
@@ -189,7 +192,7 @@ public protocol LuminaApp: Sendable {
     /// The run() method should return after this is called.
     ///
     /// This method is idempotent (safe to call multiple times).
-    func quit()
+    mutating func quit()
 
     /// Create a new window and register it with the application.
     ///
@@ -208,7 +211,7 @@ public protocol LuminaApp: Sendable {
         size: LogicalSize,
         resizable: Bool,
         monitor: Monitor?
-    ) throws -> LuminaWindow
+    ) throws -> Window
 
     /// Whether the application should quit when the last window is closed.
     ///
@@ -237,7 +240,7 @@ public protocol LuminaApp: Sendable {
 /// - Throws: `LuminaError.platformError` if platform initialization fails
 /// - Returns: A new application instance ready to create windows and run the event loop
 @MainActor
-public func createLuminaApp() throws -> any LuminaApp {
+public func createLuminaApp() throws -> any LuminaApp & ~Copyable {
     #if os(macOS)
     return try MacApplication()
     #elseif os(Windows)

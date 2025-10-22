@@ -239,11 +239,10 @@ struct WinApplication: LuminaApp {
         onWindowClosed = callback
     }
 
-    func quit() {
+    mutating func quit() {
         // Post quit message to terminate the message loop
         PostQuitMessage(0)
-        var mutableSelf = self
-        mutableSelf.shouldQuit = true
+        shouldQuit = true
     }
 
     // MARK: - Private Helpers

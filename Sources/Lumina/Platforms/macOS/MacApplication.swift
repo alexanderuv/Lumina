@@ -481,7 +481,7 @@ struct MacApplication: LuminaApp {
         onWindowClosed = callback
     }
 
-    func quit() {
+    mutating func quit() {
         logger.logStateTransition("Application quit requested")
 
         // Request application termination

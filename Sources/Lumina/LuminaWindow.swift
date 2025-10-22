@@ -10,7 +10,7 @@
 /// - macOS: Wraps NSWindow with coordinate conversion (AppKit origin is bottom-left)
 /// - Windows: Wraps HWND with Win32 API calls (origin is top-left)
 @MainActor
-public protocol LuminaWindow: Sendable {
+public protocol LuminaWindow: Sendable, ~Copyable {
     /// Unique identifier for this window.
     ///
     /// The ID must remain stable for the lifetime of the window and should
