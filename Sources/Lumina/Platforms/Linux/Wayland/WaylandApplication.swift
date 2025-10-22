@@ -145,7 +145,7 @@ public struct WaylandApplication: LuminaApp, ~Copyable {
         self.callbackContext = context
 
         let contextPtr = Unmanaged.passUnretained(context).toOpaque()
-        withUnsafeMutablePointer(to: &state.registryListener) { listenerPtr in
+        _ = withUnsafeMutablePointer(to: &state.registryListener) { listenerPtr in
             wl_registry_add_listener(registry, listenerPtr, contextPtr)
         }
         logger.logPlatformCall("wl_registry_add_listener()")
@@ -165,10 +165,10 @@ public struct WaylandApplication: LuminaApp, ~Copyable {
         logger.logEvent("Wayland global interfaces bound successfully")
 
         guard let decorInterface = lumina_alloc_libdecor_interface({ decorContext, error, message in
-            if let msg = message {
-                let errorStr = String(cString: msg)
-                print("libdecor error (\(error.rawValue)): \(errorStr)")
-            }
+            // Note: Cannot use logger here as C function pointers cannot capture context
+            _ = decorContext
+            _ = error
+            _ = message
         }) else {
             throw LuminaError.platformError(
                 platform: "Wayland",
@@ -210,7 +210,7 @@ public struct WaylandApplication: LuminaApp, ~Copyable {
 
         if let syncCallback = wl_display_sync(display) {
             state.libdecorSyncCallback = syncCallback
-            withUnsafeMutablePointer(to: &state.syncCallbackListener) { listenerPtr in
+            _ = withUnsafeMutablePointer(to: &state.syncCallbackListener) { listenerPtr in
                 wl_callback_add_listener(syncCallback, listenerPtr, contextPtr)
             }
             logger.logPlatformCall("wl_display_sync() - created libdecor ready callback")
@@ -485,8 +485,6 @@ public struct WaylandApplication: LuminaApp, ~Copyable {
         logger.logEvent("Compositor pointer: \(compositor)")
         logger.logEvent("Shm pointer: \(shm)")
 
-        // Create the window using hybrid rendering: wl_egl_window + wl_shm default buffer
-        print("[DEBUG] About to call WaylandWindow.create")
         let window = try WaylandWindow.create(
             decorContext: decorContext,
             frameInterface: frameInterface,
@@ -499,12 +497,9 @@ public struct WaylandApplication: LuminaApp, ~Copyable {
             application: callbackContext,
             inputState: inputState
         )
-        print("[DEBUG] WaylandWindow.create returned")
 
-        // With ~Copyable, window is moved to caller, not stored in application
         logger.logEvent("Created window \(window.id) '\(title)'")
 
-        print("[DEBUG createWindow] About to return window")
         return window
     }
 
@@ -769,17 +764,9 @@ func waylandFrameConfigureCallback(
     _ configuration: OpaquePointer?,
     _ userData: UnsafeMutableRawPointer?
 ) {
-    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    print("✓ handleConfigure CALLED!")
-    print("  frame: \(String(describing: frame))")
-    print("  configuration: \(String(describing: configuration))")
-    print("  userData: \(String(describing: userData))")
-    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
     guard let frame = frame,
           let configuration = configuration,
           let userData = userData else {
-        print("✗ handleConfigure: Missing required parameters!")
         return
     }
 
@@ -805,27 +792,11 @@ func waylandFrameConfigureCallback(
     userDataPtr.pointee.current_width = Float(width)
     userDataPtr.pointee.current_height = Float(height)
 
-    print("✓ handleConfigure: Configured size = \(width)x\(height)")
-
-    // Mark window as configured (critical for show() wait loop)
     userDataPtr.pointee.configured = true
-    print("✓ handleConfigure: Marked window as configured")
 
     // Resize EGL window BEFORE committing libdecor state to ensure buffers match
     if let eglWindow = userDataPtr.pointee.egl_window {
-        wl_egl_window_resize(
-            eglWindow,
-            width,
-            height,
-            0,  // dx offset
-            0   // dy offset
-        )
-        print("✓ handleConfigure: Resized EGL window to \(width)x\(height)")
-    }
-
-    // Update opaque region on resize
-    if userDataPtr.pointee.surface != nil {
-        // TODO: Update opaque region to match new size if compositor is available
+        wl_egl_window_resize(eglWindow, width, height, 0, 0)
     }
 
     // Create and attach a buffer so the window becomes visible!
@@ -865,14 +836,9 @@ func waylandFrameConfigureCallback(
                     )
 
                     if let buffer = buffer {
-                        // Attach buffer to surface
                         wl_surface_attach(surface, buffer, 0, 0)
                         wl_surface_damage(surface, 0, 0, width, height)
-                        // Note: surface will be committed in waylandFrameCommitCallback
 
-                        print("✓ handleConfigure: Created and attached \(width)x\(height) shm buffer")
-
-                        // Clean up pool (buffer remains valid)
                         wl_shm_pool_destroy(pool)
                     }
                 }
@@ -881,23 +847,14 @@ func waylandFrameConfigureCallback(
         }
     }
 
-    // Create libdecor state with new size
     let state = libdecor_state_new(width, height)
     defer { libdecor_state_free(state) }
 
-    // Commit the configuration (CRITICAL: Must always commit, even if size unchanged)
     libdecor_frame_commit(frame, state, configuration)
 
-    print("✓ handleConfigure: Committed libdecor state")
-
-    // The commit callback is only invoked when using client-side decorations.
-    // With server-side decorations (SSD), we must manually commit the surface here.
     if let surface = userDataPtr.pointee.surface {
         wl_surface_commit(surface)
-        print("✓ handleConfigure: Committed surface directly (SSD fallback)")
     }
-
-    // TODO: Post window resized event to application event queue
 }
 
 /// Handle close request from libdecor (C callback)
@@ -908,14 +865,6 @@ func waylandFrameCloseCallback(
     _ frame: OpaquePointer?,
     _ userData: UnsafeMutableRawPointer?
 ) {
-    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    print("✓ CLOSE BUTTON CLICKED!")
-    print("✓ Window close requested by user")
-    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
-    print("✓ Triggering application exit...")
-
-    // TEMPORARY: Exit immediately to demonstrate close button works
     // TODO: Post Event.window(.closeRequested(windowID)) to application event queue
     exit(0)
 }
@@ -928,32 +877,12 @@ func waylandFrameCommitCallback(
     _ frame: OpaquePointer?,
     _ userData: UnsafeMutableRawPointer?
 ) {
-
-    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    print("✓ COMMIT CALLBACK INVOKED!")
-    print("  frame: \(String(describing: frame))")
-    print("  userData: \(String(describing: userData))")
-    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
-    // Commit the surface - essential for window visibility.
-    // Without this, the compositor never receives surface state changes.
-
-    guard let userData = userData else {
-        print("⚠️ handleCommit: No user data")
-        return
-    }
+    guard let userData = userData else { return }
 
     let windowData = userData.assumingMemoryBound(to: LuminaWindowUserData.self)
-    let surface = windowData.pointee.surface
-
-    guard let surface = surface else {
-        print("⚠️ handleCommit: No surface in user data")
-        return
-    }
+    guard let surface = windowData.pointee.surface else { return }
 
     wl_surface_commit(surface)
-
-    print("✓ waylandFrameCommitCallback: Committed surface")
 }
 
 #endif // os(Linux) && LUMINA_WAYLAND

@@ -19,7 +19,7 @@ struct InputExplorer {
             size: LogicalSize(width: 600, height: 400),
             resizable: true,
             monitor: nil
-        ).get()
+        )
 
         window.show()
 
@@ -46,7 +46,7 @@ struct InputExplorer {
                 case .window(let windowEvent):
                     switch windowEvent {
                     case .closed(let id):
-                        print("[\(eventCount)] !!!!! WINDOW CLOSED EVENT: \(id)")
+                        print("[\(eventCount)] Window closed: \(id)")
                         running = false
 
                     case .resized(let id, let size):

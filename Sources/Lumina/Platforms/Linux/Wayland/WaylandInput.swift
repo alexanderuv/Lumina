@@ -224,7 +224,7 @@ final class WaylandInputState {
         // Wayland holds a pointer to this struct, so it must remain alive
         // use static const structs; we store as instance variable
         let userData = Unmanaged.passUnretained(self).toOpaque()
-        withUnsafeMutablePointer(to: &state.seatListener) { listenerPtr in
+        _ = withUnsafeMutablePointer(to: &state.seatListener) { listenerPtr in
             wl_seat_add_listener(seat, listenerPtr, userData)
         }
     }
@@ -296,11 +296,7 @@ private func seatNameCallback(
     seat: OpaquePointer?,
     name: UnsafePointer<CChar>?
 ) {
-    // Informational only - we don't need to track seat names in Milestone 1
-    if let name = name {
-        let seatName = String(cString: name)
-        logger.logDebug("Wayland seat name: \(seatName)")
-    }
+    // Informational only
 }
 
 // MARK: - Pointer Listener Setup
@@ -316,7 +312,7 @@ extension WaylandInputState {
         // CRITICAL: Listener struct is stored in State (not stack-allocated!)
         // Wayland holds a pointer to this struct, so it must remain alive
         let userData = Unmanaged.passUnretained(self).toOpaque()
-        withUnsafeMutablePointer(to: &state.pointerListener) { listenerPtr in
+        _ = withUnsafeMutablePointer(to: &state.pointerListener) { listenerPtr in
             wl_pointer_add_listener(pointer, listenerPtr, userData)
         }
     }
@@ -534,7 +530,7 @@ extension WaylandInputState {
         // CRITICAL: Listener struct is stored in State (not stack-allocated!)
         // Wayland holds a pointer to this struct, so it must remain alive
         let userData = Unmanaged.passUnretained(self).toOpaque()
-        withUnsafeMutablePointer(to: &state.keyboardListener) { listenerPtr in
+        _ = withUnsafeMutablePointer(to: &state.keyboardListener) { listenerPtr in
             wl_keyboard_add_listener(keyboard, listenerPtr, userData)
         }
     }
@@ -817,7 +813,9 @@ extension WaylandInputState {
             return nil
         }
 
-        return String(cString: buffer)
+        // Convert buffer to String using proper decoding (truncating null terminator)
+        let bytes = buffer.prefix(Int(count)).map { UInt8(bitPattern: $0) }
+        return String(decoding: bytes, as: UTF8.self)
     }
 }
 
