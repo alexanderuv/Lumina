@@ -360,25 +360,7 @@ public struct X11Window: LuminaWindow {
     }
 
     public func cursor() -> any LuminaCursor {
-        // Cursor implementation will come later
-        // For now, return a placeholder that conforms to the protocol
-        return X11Cursor()
-    }
-}
-
-/// Placeholder cursor implementation for X11
-@MainActor
-private struct X11Cursor: LuminaCursor {
-    func set(_ cursor: SystemCursor) {
-        // TODO: Implement X11 cursor support
-    }
-
-    func hide() {
-        // TODO: Implement cursor hide
-    }
-
-    func show() {
-        // TODO: Implement cursor show
+        return X11Cursor(window: xcbWindow, connection: connection)
     }
 }
 

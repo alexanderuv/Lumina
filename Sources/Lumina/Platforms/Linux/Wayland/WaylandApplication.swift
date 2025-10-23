@@ -27,27 +27,38 @@ public final class WaylandApplication: LuminaApp {
     ///
     /// SAFETY: @unchecked Sendable because all mutations happen on main thread via
     /// synchronous C callbacks during wl_display_dispatch()/roundtrip().
+    ///
+    /// This is a pure data container with no logic.
     internal final class State: @unchecked Sendable {
+        // Core protocols (required)
         var compositor: OpaquePointer?
         var shm: OpaquePointer?
         var seat: OpaquePointer?
+
+        // Core protocols (optional but common)
+        var subcompositor: OpaquePointer?
+        var dataDeviceManager: OpaquePointer?
+        var xdgWmBase: OpaquePointer?               // xdg_wm_base - shell protocol
+
+        // Extension protocols (optional)
+        var viewporter: OpaquePointer?              // wp_viewporter - viewport scaling
+        var pointerConstraints: OpaquePointer?       // zwp_pointer_constraints_v1 - pointer locking
+        var relativePointerManager: OpaquePointer?   // zwp_relative_pointer_manager_v1 - raw motion
+        var decorationManager: OpaquePointer?        // zxdg_decoration_manager_v1 - server-side decoration
+
+        // Cursor support
+        var cursorTheme: OpaquePointer?              // wl_cursor_theme* - standard cursor size
+        var cursorThemeHiDPI: OpaquePointer?         // wl_cursor_theme* - 2x size for HiDPI
+        var cursorSurface: OpaquePointer?            // wl_surface* - cursor surface
+        var currentCursorName: String?               // Currently set cursor name (for caching)
+        var cursorHidden: Bool = false               // Track cursor visibility state
 
         var libdecorReady: Bool = false
         var libdecorSyncCallback: OpaquePointer?
 
         /// Persistent listener structs (must not be stack-allocated)
-        var registryListener: wl_registry_listener
-        var syncCallbackListener: wl_callback_listener
-
-        init() {
-            self.registryListener = wl_registry_listener(
-                global: registryGlobalCallback,
-                global_remove: registryGlobalRemoveCallback
-            )
-            self.syncCallbackListener = wl_callback_listener(
-                done: libdecorReadySyncCallback
-            )
-        }
+        var registryListener: wl_registry_listener?
+        var syncCallbackListener: wl_callback_listener?
     }
 
     /// Mutable state wrapper (fileprivate so nonisolated callbacks can access it)
@@ -55,19 +66,26 @@ public final class WaylandApplication: LuminaApp {
 
     // MARK: - Core Wayland Resources
 
-    /// **Concurrency:** nonisolated(unsafe) allows access from deinit
+    /// libdecor context (non-Sendable C type accessed from deinit)
     private nonisolated(unsafe) var decorContext: OpaquePointer?
-    /// **Concurrency:** nonisolated(unsafe) allows access from deinit
+
+    /// libdecor interface callbacks (non-Sendable C type accessed from deinit)
     private nonisolated(unsafe) var decorInterface: UnsafeMutablePointer<libdecor_interface>?
 
-    /// Shared interface for all windows
-    /// **Concurrency:** nonisolated(unsafe) allows access from deinit
+    /// Shared interface for all windows (non-Sendable C type accessed from deinit)
     private nonisolated(unsafe) var frameInterface: UnsafeMutablePointer<libdecor_frame_interface>?
 
-    /// **Concurrency:** nonisolated(unsafe) allows access from deinit
+    /// Wayland registry (non-Sendable C type accessed from deinit)
     private nonisolated(unsafe) var registry: OpaquePointer?
-    /// **Concurrency:** nonisolated(unsafe) allows access from C callbacks
+
+    /// Input state management (accessed from C callbacks)
     private nonisolated(unsafe) var inputState: WaylandInputState?
+
+    /// Libdecor loader for dynamic loading
+    private let libdecorLoader = LibdecorLoader.shared
+
+    /// Cursor loader for dynamic loading
+    internal let cursorLoader = WaylandCursorLoader.shared
 
     // MARK: - Event Loop State
 
@@ -107,8 +125,24 @@ public final class WaylandApplication: LuminaApp {
             lumina_free_libdecor_interface(decorInterface)
         }
 
-        if let decorContext = decorContext {
-            libdecor_unref(decorContext)
+        if let decorContext = decorContext,
+           let libdecorUnref = libdecorLoader.libdecor_unref {
+            libdecorUnref(decorContext)
+        }
+
+        // Clean up cursor resources
+        if let cursorSurface = state.cursorSurface {
+            wl_surface_destroy(cursorSurface)
+        }
+
+        if let cursorTheme = state.cursorTheme,
+           let themeDestroy = cursorLoader.wl_cursor_theme_destroy {
+            themeDestroy(cursorTheme)
+        }
+
+        if let cursorThemeHiDPI = state.cursorThemeHiDPI,
+           let themeDestroy = cursorLoader.wl_cursor_theme_destroy {
+            themeDestroy(cursorThemeHiDPI)
         }
 
         if let registry = registry {
@@ -123,11 +157,9 @@ public final class WaylandApplication: LuminaApp {
     /// Initialization steps:
     /// 1. Get registry and set up listener
     /// 2. Discover globals via two roundtrips
-    /// 3. Create libdecor context
-    /// 4. Create shared frame interface
-    /// 5. Set up sync callback for libdecor readiness
+    /// 3. Attempt to load libdecor (optional)
     ///
-    /// - Throws: LuminaError if initialization fails
+    /// - Throws: LuminaError if critical initialization fails
     private func completeInitialization() throws {
         let display = platform.displayConnection
 
@@ -141,9 +173,14 @@ public final class WaylandApplication: LuminaApp {
         }
         self.registry = registry
 
-        // Pass WaylandApplication directly to callbacks (GLFW pattern)
+        // Initialize registry listener and register callbacks
+        state.registryListener = wl_registry_listener(
+            global: registryGlobalCallback,
+            global_remove: registryGlobalRemoveCallback
+        )
+
         let appPtr = Unmanaged.passUnretained(self).toOpaque()
-        _ = withUnsafeMutablePointer(to: &state.registryListener) { listenerPtr in
+        _ = withUnsafeMutablePointer(to: &state.registryListener!) { listenerPtr in
             wl_registry_add_listener(registry, listenerPtr, appPtr)
         }
 
@@ -157,52 +194,124 @@ public final class WaylandApplication: LuminaApp {
             throw LuminaError.waylandProtocolMissing(protocol: "wl_shm")
         }
 
-        guard let decorInterface = lumina_alloc_libdecor_interface({ decorContext, error, message in
-            // Note: Cannot use logger here as C function pointers cannot capture context
-            _ = decorContext
-            _ = error
-            _ = message
+        // Attempt to load libdecor dynamically (optional)
+        tryInitializeLibdecor(display: display, appPtr: appPtr)
+
+        // Attempt to load cursor theme (optional)
+        tryInitializeCursor()
+    }
+
+    /// Attempt to initialize libdecor if available
+    /// Non-throwing - if it fails, we'll use SSD or CSD fallback
+    private func tryInitializeLibdecor(display: OpaquePointer, appPtr: UnsafeMutableRawPointer) {
+        guard libdecorLoader.load() else {
+            print("[WaylandApplication] libdecor not available, will use fallback decorations")
+            return
+        }
+
+        guard let decorInterface = lumina_alloc_libdecor_interface({ _, error, message in
+            let errorStr = error == LIBDECOR_ERROR_COMPOSITOR_INCOMPATIBLE ? "compositor incompatible" : "invalid configuration"
+            let msg = message.map { String(cString: $0) } ?? "unknown"
+            print("[libdecor] Error: \(errorStr) - \(msg)")
         }) else {
-            throw LuminaError.platformError(
-                platform: "Wayland",
-                operation: "lumina_alloc_libdecor_interface",
-                code: -4,
-                message: "Failed to allocate libdecor interface"
-            )
+            print("[WaylandApplication] Failed to allocate libdecor interface")
+            return
         }
         self.decorInterface = decorInterface
 
-        guard let decorContext = libdecor_new(display, decorInterface) else {
-            throw LuminaError.platformError(
-                platform: "Wayland",
-                operation: "libdecor_new",
-                code: -5,
-                message: "Failed to create libdecor context. Is libdecor-0 installed?"
-            )
+        guard let libdecorNew = libdecorLoader.libdecor_new,
+              let decorContext = libdecorNew(display, decorInterface) else {
+            print("[WaylandApplication] Failed to create libdecor context")
+            lumina_free_libdecor_interface(decorInterface)
+            self.decorInterface = nil
+            return
         }
         self.decorContext = decorContext
-        _ = libdecor_dispatch(decorContext, 0)
 
         guard let frameInterface = lumina_alloc_frame_interface(
             waylandFrameConfigureCallback,
             waylandFrameCloseCallback,
             waylandFrameCommitCallback
         ) else {
-            throw LuminaError.platformError(
-                platform: "Wayland",
-                operation: "lumina_alloc_frame_interface",
-                code: -6,
-                message: "Failed to allocate shared frame interface"
-            )
+            print("[WaylandApplication] Failed to allocate frame interface")
+            return
         }
         self.frameInterface = frameInterface
 
+        // Dispatch and set up sync callback
+        if let dispatch = libdecorLoader.libdecor_dispatch {
+            _ = dispatch(decorContext, 0)
+        }
+
         if let syncCallback = wl_display_sync(display) {
             state.libdecorSyncCallback = syncCallback
-            _ = withUnsafeMutablePointer(to: &state.syncCallbackListener) { listenerPtr in
+            state.syncCallbackListener = wl_callback_listener(done: libdecorReadySyncCallback)
+            _ = withUnsafeMutablePointer(to: &state.syncCallbackListener!) { listenerPtr in
                 wl_callback_add_listener(syncCallback, listenerPtr, appPtr)
             }
         }
+
+        print("[WaylandApplication] libdecor initialized successfully")
+    }
+
+    /// Dispatch libdecor events using the dynamic loader
+    private func dispatchLibdecor(timeout: Int32 = 0) {
+        guard let decorContext = decorContext,
+              let dispatch = libdecorLoader.libdecor_dispatch else {
+            return
+        }
+        _ = dispatch(decorContext, timeout)
+    }
+
+    /// Attempt to initialize cursor theme if available
+    /// Non-throwing - if it fails, cursor operations will be no-ops
+    private func tryInitializeCursor() {
+        guard cursorLoader.isAvailable else {
+            logger.logInfo("libwayland-cursor not available, cursor support disabled")
+            return
+        }
+
+        guard let compositor = state.compositor,
+              let shm = state.shm else {
+            logger.logError("Cannot initialize cursor: compositor or shm not available")
+            return
+        }
+
+        // Read cursor size from environment
+        var cursorSize: Int32 = 24  // Default size
+        if let sizeString = ProcessInfo.processInfo.environment["XCURSOR_SIZE"],
+           let size = Int32(sizeString) {
+            cursorSize = size
+        }
+
+        // Read theme name from environment
+        let themeName = ProcessInfo.processInfo.environment["XCURSOR_THEME"]
+
+        // Load standard cursor theme
+        if let themeLoad = cursorLoader.wl_cursor_theme_load {
+            state.cursorTheme = themeName.withOptionalCString { namePtr in
+                themeLoad(namePtr, cursorSize, shm)
+            }
+
+            if state.cursorTheme == nil {
+                logger.logError("Failed to load cursor theme, cursor support disabled")
+                return
+            }
+
+            // Load HiDPI theme (2x size, optional)
+            state.cursorThemeHiDPI = themeName.withOptionalCString { namePtr in
+                themeLoad(namePtr, cursorSize * 2, shm)
+            }
+        }
+
+        // Create cursor surface
+        state.cursorSurface = wl_compositor_create_surface(compositor)
+        if state.cursorSurface == nil {
+            logger.logError("Failed to create cursor surface")
+            return
+        }
+
+        logger.logInfo("Cursor theme initialized successfully (size: \(cursorSize))")
     }
 
     // MARK: - Event Loop (LuminaApp Protocol)
@@ -250,9 +359,7 @@ public final class WaylandApplication: LuminaApp {
         //    This is CRITICAL - libdecor needs to process the events!
 
         // Process any pending libdecor events
-        if let decorContext = decorContext {
-            libdecor_dispatch(decorContext, 0)
-        }
+        dispatchLibdecor()
 
         // 2. Process Wayland protocol events based on mode
         switch mode {
@@ -260,15 +367,12 @@ public final class WaylandApplication: LuminaApp {
             // Non-blocking: dispatch only pending events
             while wl_display_dispatch_pending(display) > 0 { }
 
-            // CRITICAL: Flush outgoing requests to compositor (GLFW pattern)
+            // CRITICAL: Flush outgoing requests to compositor
             // Without this, window resizes and other state changes won't be sent!
-            // GLFW does this in both poll and wait modes before polling the fd.
             _ = wl_display_flush(display)
 
             // Process libdecor events that were triggered by the Wayland events
-            if let decorContext = decorContext {
-                libdecor_dispatch(decorContext, 0)
-            }
+            dispatchLibdecor()
 
         case .wait:
             // Blocking: wait for events using the proper prepare/read/dispatch pattern
@@ -303,9 +407,7 @@ public final class WaylandApplication: LuminaApp {
             _ = wl_display_dispatch_pending(display)
 
             // CRITICAL: Process libdecor events triggered by the Wayland events
-            if let decorContext = decorContext {
-                libdecor_dispatch(decorContext, 0)
-            }
+            dispatchLibdecor()
 
         case .waitUntil(let deadline):
             // Blocking with timeout using the proper prepare/read/dispatch pattern
@@ -342,17 +444,13 @@ public final class WaylandApplication: LuminaApp {
                 _ = wl_display_dispatch_pending(display)
 
                 // CRITICAL: Process libdecor events triggered by the Wayland events
-                if let decorContext = decorContext {
-                    libdecor_dispatch(decorContext, 0)
-                }
+                dispatchLibdecor()
             } else {
                 // Timeout already expired - just dispatch pending
                 _ = wl_display_dispatch_pending(display)
 
                 // CRITICAL: Process libdecor events triggered by the Wayland events
-                if let decorContext = decorContext {
-                    libdecor_dispatch(decorContext, 0)
-                }
+                dispatchLibdecor()
             }
         }
 
@@ -405,9 +503,7 @@ public final class WaylandApplication: LuminaApp {
         // Non-blocking dispatch - process any pending decoration events
         // Note: libdecor_dispatch internally calls wl_display_dispatch_pending,
         // so we don't need to call it again here
-        if let decorContext = decorContext {
-            libdecor_dispatch(decorContext, 0)
-        }
+        dispatchLibdecor()
 
         // Flush outgoing requests
         _ = wl_display_flush(platform.displayConnection)
@@ -432,6 +528,42 @@ public final class WaylandApplication: LuminaApp {
     }
 
     // MARK: - Window Management
+
+    /// Select best available decoration strategy (3-tier fallback)
+    /// 1. Try libdecor (best UX, compositor-aware)
+    /// 2. Try server-side decorations (SSD)
+    /// 3. Fall back to client-side decorations (CSD)
+    /// 4. No decorations if nothing available
+    private func selectDecorationStrategy() -> DecorationStrategy {
+        // Tier 1: libdecor (dynamically loaded)
+        if libdecorLoader.isAvailable, decorContext != nil {
+            print("[WaylandApplication] Using libdecor decorations")
+            return LibdecorDecorations(loader: libdecorLoader, display: platform.displayConnection)
+        }
+
+        // Tier 2: Server-side decorations
+        if let decorationManager = state.decorationManager {
+            print("[WaylandApplication] Using server-side decorations")
+            return ServerSideDecorations(decorationManager: decorationManager)
+        }
+
+        // Tier 3: Client-side decorations
+        if let compositor = state.compositor,
+           let subcompositor = state.subcompositor,
+           let shm = state.shm {
+            print("[WaylandApplication] Using client-side decorations")
+            return ClientSideDecorations(
+                compositor: compositor,
+                subcompositor: subcompositor,
+                shm: shm,
+                viewporter: state.viewporter
+            )
+        }
+
+        // Tier 4: No decorations (borderless)
+        print("[WaylandApplication] WARNING: No decoration method available, using borderless windows")
+        return NoDecorations()
+    }
 
     public func createWindow(
         title: String,
@@ -471,7 +603,7 @@ public final class WaylandApplication: LuminaApp {
             )
         }
 
-        let window = try WaylandWindow.create(
+        return try WaylandWindow(
             decorContext: decorContext,
             frameInterface: frameInterface,
             display: display,
@@ -480,10 +612,10 @@ public final class WaylandApplication: LuminaApp {
             title: title,
             size: size,
             resizable: resizable,
-            inputState: inputState
+            inputState: inputState,
+            monitorTracker: platform.monitorTracker,
+            application: self
         )
-
-        return window
     }
 
     // MARK: - Application Control
@@ -542,6 +674,22 @@ public final class WaylandApplication: LuminaApp {
                 state.shm = OpaquePointer(bound)
             }
 
+        case "wl_subcompositor":
+            // Bind to wl_subcompositor (version 1) - for subsurfaces (client-side decorations)
+            let boundVersion = min(version, 1)
+            let interfacePtr = lumina_wl_subcompositor_interface()
+            if let bound = wl_registry_bind(registry, name, interfacePtr, boundVersion) {
+                state.subcompositor = OpaquePointer(bound)
+            }
+
+        case "wl_data_device_manager":
+            // Bind to wl_data_device_manager (version 3 or less) - for clipboard/DnD
+            let boundVersion = min(version, 3)
+            let interfacePtr = lumina_wl_data_device_manager_interface()
+            if let bound = wl_registry_bind(registry, name, interfacePtr, boundVersion) {
+                state.dataDeviceManager = OpaquePointer(bound)
+            }
+
         case "wl_seat":
             // Bind to wl_seat (version 5 or less)
             let boundVersion = min(version, 5)
@@ -556,8 +704,50 @@ public final class WaylandApplication: LuminaApp {
             // wl_output is handled by WaylandPlatform, not the application
             break
 
+        case "wp_viewporter":
+            // Bind to wp_viewporter (version 1) - viewport scaling for HiDPI
+            let boundVersion = min(version, 1)
+            let interfacePtr = lumina_wp_viewporter_interface()
+            if let bound = wl_registry_bind(registry, name, interfacePtr, boundVersion) {
+                state.viewporter = OpaquePointer(bound)
+            }
+
+        case "zwp_pointer_constraints_v1":
+            // Bind to zwp_pointer_constraints_v1 (version 1) - pointer locking/confinement
+            let boundVersion = min(version, 1)
+            let interfacePtr = lumina_zwp_pointer_constraints_v1_interface()
+            if let bound = wl_registry_bind(registry, name, interfacePtr, boundVersion) {
+                state.pointerConstraints = OpaquePointer(bound)
+            }
+
+        case "zwp_relative_pointer_manager_v1":
+            // Bind to zwp_relative_pointer_manager_v1 (version 1) - raw mouse motion
+            let boundVersion = min(version, 1)
+            let interfacePtr = lumina_zwp_relative_pointer_manager_v1_interface()
+            if let bound = wl_registry_bind(registry, name, interfacePtr, boundVersion) {
+                state.relativePointerManager = OpaquePointer(bound)
+            }
+
+        case "zxdg_decoration_manager_v1":
+            // Bind to zxdg_decoration_manager_v1 (version 1) - server-side decoration negotiation
+            let boundVersion = min(version, 1)
+            let interfacePtr = lumina_zxdg_decoration_manager_v1_interface()
+            if let bound = wl_registry_bind(registry, name, interfacePtr, boundVersion) {
+                state.decorationManager = OpaquePointer(bound)
+            }
+
+        case "xdg_wm_base":
+            // Bind to xdg_wm_base (version 2 or less) - core shell protocol
+            // Used when libdecor is not available
+            let boundVersion = min(version, 2)
+            let interfacePtr = lumina_xdg_wm_base_interface()
+            if let bound = wl_registry_bind(registry, name, interfacePtr, boundVersion) {
+                state.xdgWmBase = OpaquePointer(bound)
+                // Set up ping listener for xdg_wm_base
+                setupXdgWmBaseListener(OpaquePointer(bound))
+            }
+
         default:
-            // We do NOT bind xdg_wm_base manually - libdecor handles xdg-shell internally.
             break
         }
     }
@@ -570,6 +760,42 @@ public final class WaylandApplication: LuminaApp {
         // Delegate seat capabilities to input module
         if let inputState = self.inputState {
             inputState.setupSeatListener(seat)
+        }
+    }
+
+    /// Set up xdg_wm_base listener to handle ping events.
+    ///
+    /// SAFETY: This is nonisolated because it's only called from handleGlobal(),
+    /// which itself runs synchronously on the main thread.
+    nonisolated func setupXdgWmBaseListener(_ wmBase: OpaquePointer) {
+        var listener = xdg_wm_base_listener(
+            ping: { userData, wmBase, serial in
+                guard let wmBase = wmBase else { return }
+                xdg_wm_base_pong(wmBase, serial)
+            }
+        )
+
+        _ = withUnsafePointer(to: &listener) { listenerPtr in
+            xdg_wm_base_add_listener(wmBase, listenerPtr, nil)
+        }
+    }
+
+    // MARK: - Internal Cursor Access (for WaylandCursor)
+
+    /// Access cursor state for WaylandCursor operations (internal to Wayland platform)
+    internal var cursorState: (
+        currentName: String?,
+        hidden: Bool,
+        surface: OpaquePointer?,
+        theme: OpaquePointer?,
+        themeHiDPI: OpaquePointer?
+    ) {
+        get {
+            (state.currentCursorName, state.cursorHidden, state.cursorSurface, state.cursorTheme, state.cursorThemeHiDPI)
+        }
+        set {
+            state.currentCursorName = newValue.currentName
+            state.cursorHidden = newValue.hidden
         }
     }
 }
@@ -606,7 +832,7 @@ private func registryGlobalCallback(
     interface: UnsafePointer<CChar>?,
     version: UInt32
 ) {
-    guard let userData = userData, let interface = interface else { return }
+    guard let userData, let interface else { return }
     let app = Unmanaged<WaylandApplication>.fromOpaque(userData).takeUnretainedValue()
     app.handleGlobal(registry: registry, name: name, interface: interface, version: version)
 }
@@ -627,7 +853,7 @@ private func libdecorReadySyncCallback(
     callback: OpaquePointer?,
     time: UInt32
 ) {
-    guard let userData = userData else { return }
+    guard let userData else { return }
     let app = Unmanaged<WaylandApplication>.fromOpaque(userData).takeUnretainedValue()
 
     app.state.libdecorReady = true
@@ -688,37 +914,41 @@ func waylandFrameConfigureCallback(
     _ configuration: OpaquePointer?,
     _ userData: UnsafeMutableRawPointer?
 ) {
-    guard let frame = frame,
-          let configuration = configuration,
-          let userData = userData else {
+    guard let frame, let configuration, let userData else {
         return
     }
 
     let userDataPtr = userData.assumingMemoryBound(to: LuminaWindowUserData.self)
+    let loader = LibdecorLoader.shared
 
     // Get configured size from libdecor
     var width: Int32 = 0
     var height: Int32 = 0
 
-    // Query content size from configuration
-    if !libdecor_configuration_get_content_size(
-        configuration,
-        frame,
-        &width,
-        &height
-    ) {
-        // No size specified, use current size from user data
+    // Query content size from configuration using dynamic loader
+    if let getContentSize = loader.libdecor_configuration_get_content_size {
+        if !getContentSize(configuration, frame, &width, &height) {
+            // No size specified, use current size from user data
+            width = Int32(userDataPtr.pointee.current_width)
+            height = Int32(userDataPtr.pointee.current_height)
+        }
+    } else {
+        // Loader not available, use current size
         width = Int32(userDataPtr.pointee.current_width)
         height = Int32(userDataPtr.pointee.current_height)
     }
 
-    // CRITICAL: Commit libdecor state FIRST (GLFW pattern line 878-880)
+    // CRITICAL: Commit libdecor state FIRST
     // This must happen BEFORE any surface operations
-    let state = libdecor_state_new(width, height)
-    defer { libdecor_state_free(state) }
-    libdecor_frame_commit(frame, state, configuration)
+    if let stateNew = loader.libdecor_state_new,
+       let stateFree = loader.libdecor_state_free,
+       let frameCommit = loader.libdecor_frame_commit,
+       let state = stateNew(width, height) {
+        defer { stateFree(state) }
+        frameCommit(frame, state, configuration)
+    }
 
-    // Check if this is first configure or if size changed (GLFW resizeWindow line 492-493)
+    // Check if this is first configure or if size changed
     let isFirstConfigure = !userDataPtr.pointee.configured
     let oldWidth = Int32(userDataPtr.pointee.current_width)
     let oldHeight = Int32(userDataPtr.pointee.current_height)
@@ -735,12 +965,12 @@ func waylandFrameConfigureCallback(
     userDataPtr.pointee.current_width = Float(width)
     userDataPtr.pointee.current_height = Float(height)
 
-    // Resize EGL window (GLFW resizeFramebuffer line 473-479)
+    // Resize EGL window
     if let eglWindow = userDataPtr.pointee.egl_window {
         wl_egl_window_resize(eglWindow, width, height, 0, 0)
     }
 
-    // Update opaque region (GLFW setContentAreaOpaque line 447-458)
+    // Update opaque region
     if let surface = userDataPtr.pointee.surface,
        let compositor = userDataPtr.pointee.compositor {
         let region = wl_compositor_create_region(compositor)
@@ -798,7 +1028,7 @@ func waylandFrameConfigureCallback(
         }
     }
 
-    // Commit surface (GLFW pattern: commit after buffer attach)
+    // Commit surface after buffer attach
     if let surface = userDataPtr.pointee.surface {
         wl_surface_commit(surface)
     }
@@ -833,6 +1063,20 @@ func waylandFrameCommitCallback(
     guard let surface = windowData.pointee.surface else { return }
 
     wl_surface_commit(surface)
+}
+
+// MARK: - Helper Extensions
+
+/// Helper extension for Optional<String> to work with C string pointers
+private extension Optional where Wrapped == String {
+    func withOptionalCString<Result>(_ body: (UnsafePointer<CChar>?) -> Result) -> Result {
+        switch self {
+        case .some(let string):
+            return string.withCString(body)
+        case .none:
+            return body(nil)
+        }
+    }
 }
 
 #endif // os(Linux) && LUMINA_WAYLAND

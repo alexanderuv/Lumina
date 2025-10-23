@@ -14,7 +14,7 @@ let package = Package(
         .library(
             name: "Lumina",
             targets: ["Lumina"]
-        )
+        ),
     ],
     dependencies: [
         // Swift Logging API
@@ -55,15 +55,47 @@ let package = Package(
             ]
         ),
 
-        /// Wayland client bindings with libdecor for Linux Wayland support
-        .systemLibrary(
+        /// Wayland client bindings for Linux Wayland support
+        /// Protocol bindings generated via: swift package plugin generate-wayland-protocols
+        /// Note: C sources are auto-discovered to allow graceful X11 fallback if protocols aren't generated
+        .target(
             name: "CWaylandClient",
             path: "Sources/CInterop/CWaylandClient",
-            pkgConfig: "wayland-client xkbcommon libdecor-0",
-            providers: [
-                .apt(["libwayland-dev", "libxkbcommon-dev", "libdecor-0-dev"]),
-                .yum(["wayland-devel", "libxkbcommon-devel", "libdecor-devel"])
+            // NO explicit sources - auto-discover all .c files for graceful fallback
+            publicHeadersPath: "include",
+            cSettings: [
+                .headerSearchPath("."),
+                .headerSearchPath("include")
+            ],
+            linkerSettings: [
+                .linkedLibrary("wayland-client"),
+                .linkedLibrary("wayland-egl"),
+                .linkedLibrary("xkbcommon")
+                // libdecor is dynamically loaded at runtime (GLFW pattern)
+            ],
+            plugins: [
+                .plugin(name: "check-wayland-protocols")
             ]
+        ),
+
+        // MARK: - Build Plugins
+
+        /// Command plugin to generate Wayland protocol bindings from XML
+        /// Usage: swift package plugin generate-wayland-protocols
+        .plugin(
+            name: "generate-wayland-protocols",
+            capability: .command(
+                intent: .custom(
+                    verb: "generate-wayland-protocols",
+                    description: "Generate Wayland protocol C bindings from XML using wayland-scanner"
+                )
+            )
+        ),
+
+        /// Build plugin to check if Wayland protocol bindings exist
+        .plugin(
+            name: "check-wayland-protocols",
+            capability: .buildTool()
         ),
 
         // MARK: - Tests

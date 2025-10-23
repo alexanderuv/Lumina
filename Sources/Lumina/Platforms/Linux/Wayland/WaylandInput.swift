@@ -42,7 +42,7 @@ final class WaylandInputState {
     ///
     /// SAFETY: @unchecked Sendable because all mutations happen on main thread via
     /// synchronous C callbacks during wl_display_dispatch().
-    fileprivate final class State: @unchecked Sendable {
+    internal final class State: @unchecked Sendable {
         // Input Devices
         var pointer: OpaquePointer?
         var keyboard: OpaquePointer?
@@ -59,6 +59,7 @@ final class WaylandInputState {
         var pointerWindowID: WindowID?
         var pointerX: Float = 0.0
         var pointerY: Float = 0.0
+        var pointerEnterSerial: UInt32 = 0  // Serial from last pointer enter event (for cursor)
         var hasPendingMotion = false
 
         /// Persistent listener structs (must remain alive for Wayland object lifetime)
@@ -99,7 +100,7 @@ final class WaylandInputState {
     }
 
     /// Mutable state wrapper (fileprivate so nonisolated callbacks can access it)
-    fileprivate let state = State()
+    internal let state = State()
 
     /// XKB context for keyboard layout interpretation (immutable after init, nonisolated(unsafe) for callback access)
     ///
@@ -229,7 +230,7 @@ final class WaylandInputState {
     /// that run synchronously on the main thread during wl_display_dispatch().
     ///
     /// - Parameter event: The event to enqueue
-    nonisolated fileprivate func enqueueEvent(_ event: Event) {
+    nonisolated internal func enqueueEvent(_ event: Event) {
         state.eventQueue.append(event)
     }
 
@@ -265,7 +266,7 @@ private func seatCapabilitiesCallback(
     seat: OpaquePointer?,
     capabilities: UInt32
 ) {
-    guard let data = data, let seat = seat else { return }
+    guard let data, let seat else { return }
 
     let inputState = Unmanaged<WaylandInputState>.fromOpaque(data).takeUnretainedValue()
 
@@ -357,6 +358,7 @@ private func pointerEnterCallback(
 
     inputState.state.pointerSurface = surface
     inputState.state.pointerWindowID = inputState.windowID(for: surface)
+    inputState.state.pointerEnterSerial = serial  // Store serial for cursor operations
 
     // Convert fixed-point to float
     inputState.state.pointerX = Float(wl_fixed_to_double(surfaceX))

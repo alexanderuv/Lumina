@@ -375,7 +375,7 @@ private func outputNameCallback(
     output: OpaquePointer?,
     name: UnsafePointer<CChar>?
 ) {
-    guard let userData = userData, let name = name else { return }
+    guard let userData, let name else { return }
 
     let outputInfo = Unmanaged<WaylandMonitorTracker.OutputInfo>.fromOpaque(userData).takeUnretainedValue()
     outputInfo.model = String(cString: name)  // Override model with proper name if available
