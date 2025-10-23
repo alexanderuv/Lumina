@@ -30,17 +30,13 @@ import CWaylandClient
 public final class WaylandPlatform: LuminaPlatform {
     // MARK: - State
 
-    /// Wayland display connection (owned by platform)
-    /// **Concurrency:** nonisolated(unsafe) allows access from deinit (which is nonisolated).
-    /// This is safe because deinit runs when no other code can access the object.
+    /// Wayland display connection (non-Sendable C type accessed from deinit)
     private nonisolated(unsafe) let display: OpaquePointer
 
     /// Monitor tracker (owned by platform)
-    private let monitorTracker: WaylandMonitorTracker
+    internal let monitorTracker: WaylandMonitorTracker
 
-    /// Registry for global bindings
-    /// **Concurrency:** nonisolated(unsafe) allows access from deinit (which is nonisolated).
-    /// This is safe because deinit runs when no other code can access the object.
+    /// Registry for global bindings (non-Sendable C type accessed from deinit)
     private nonisolated(unsafe) var registry: OpaquePointer?
 
     /// Track if app has been created (only one allowed)
@@ -49,14 +45,10 @@ public final class WaylandPlatform: LuminaPlatform {
     /// Logger
     private let logger: LuminaLogger
 
-    /// Context for registry callbacks
-    private var registryContext: RegistryContext?
-
     // MARK: - Initialization
 
     public init() throws {
         logger = LuminaLogger(label: "com.lumina.wayland.platform", level: .info)
-        logger.logEvent("Initializing Wayland platform")
 
         // Connect to Wayland display
         guard let display = wl_display_connect(nil) else {
@@ -68,7 +60,6 @@ public final class WaylandPlatform: LuminaPlatform {
             )
         }
         self.display = display
-        logger.logPlatformCall("wl_display_connect() -> \(display)")
 
         // Get registry
         guard let registry = wl_display_get_registry(display) else {
@@ -81,33 +72,23 @@ public final class WaylandPlatform: LuminaPlatform {
             )
         }
         self.registry = registry
-        logger.logPlatformCall("wl_display_get_registry() -> \(registry)")
 
         // Initialize monitor tracker
         self.monitorTracker = WaylandMonitorTracker(display: display)
-        logger.logEvent("Monitor tracker initialized")
 
-        // Set up registry listener for wl_output globals
-        let context = RegistryContext(monitorTracker: monitorTracker)
-        self.registryContext = context
-
-        let contextPtr = Unmanaged.passUnretained(context).toOpaque()
+        // Set up registry listener for wl_output globals (pass platform directly)
+        let platformPtr = Unmanaged.passUnretained(self).toOpaque()
         var registryListener = wl_registry_listener(
             global: registryGlobalCallback,
             global_remove: registryGlobalRemoveCallback
         )
-        wl_registry_add_listener(registry, &registryListener, contextPtr)
-        logger.logPlatformCall("wl_registry_add_listener()")
+        wl_registry_add_listener(registry, &registryListener, platformPtr)
 
         // Roundtrip to bind all globals (especially wl_output for monitors)
         wl_display_roundtrip(display)
-        logger.logPlatformCall("wl_display_roundtrip() - discovered globals")
 
         // Second roundtrip to process initial events from wl_output
         wl_display_roundtrip(display)
-        logger.logPlatformCall("wl_display_roundtrip() - processed initial events")
-
-        logger.logEvent("Wayland platform initialized successfully")
     }
 
     // MARK: - Monitor Enumeration
@@ -130,8 +111,6 @@ public final class WaylandPlatform: LuminaPlatform {
         }
 
         appCreated = true
-        logger.logEvent("Creating Wayland application")
-
         return try WaylandApplication(platform: self)
     }
 
@@ -170,25 +149,10 @@ public final class WaylandPlatform: LuminaPlatform {
     // MARK: - Cleanup
 
     deinit {
-        logger.logEvent("Cleaning up Wayland platform")
         if let registry = registry {
             wl_registry_destroy(registry)
         }
         wl_display_disconnect(display)
-    }
-}
-
-// MARK: - Registry Context
-
-/// Context object for registry callbacks.
-///
-/// This class holds weak references to the monitor tracker and allows
-/// C callbacks to access Swift state safely.
-private final class RegistryContext {
-    weak var monitorTracker: WaylandMonitorTracker?
-
-    init(monitorTracker: WaylandMonitorTracker) {
-        self.monitorTracker = monitorTracker
     }
 }
 
@@ -205,14 +169,14 @@ private func registryGlobalCallback(
     interface: UnsafePointer<CChar>?,
     version: UInt32
 ) {
-    guard let userData = userData, let interface = interface, let registry = registry else { return }
-    let context = Unmanaged<RegistryContext>.fromOpaque(userData).takeUnretainedValue()
+    guard let userData, let interface, let registry else { return }
+    let platform = Unmanaged<WaylandPlatform>.fromOpaque(userData).takeUnretainedValue()
     let interfaceName = String(cString: interface)
 
     // We only care about wl_output for monitor enumeration
     // Other globals (compositor, shm, seat, etc.) are handled by WaylandApplication
     if interfaceName == "wl_output" {
-        context.monitorTracker?.bindOutput(registry: registry, name: name, version: version)
+        platform.monitorTracker.bindOutput(registry: registry, name: name, version: version)
     }
 }
 
@@ -225,10 +189,10 @@ private func registryGlobalRemoveCallback(
     name: UInt32
 ) {
     guard let userData = userData else { return }
-    let context = Unmanaged<RegistryContext>.fromOpaque(userData).takeUnretainedValue()
+    let platform = Unmanaged<WaylandPlatform>.fromOpaque(userData).takeUnretainedValue()
 
     // Notify monitor tracker of output removal
-    context.monitorTracker?.removeOutput(name: name)
+    platform.monitorTracker.removeOutput(name: name)
 }
 
 #endif // os(Linux) && LUMINA_WAYLAND

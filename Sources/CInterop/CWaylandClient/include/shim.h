@@ -11,8 +11,12 @@
 // XKB for keyboard handling
 #include <xkbcommon/xkbcommon.h>
 
-// libdecor for window decorations (includes xdg-shell)
-#include <libdecor-0/libdecor.h>
+// Wayland extension protocols (GLFW pattern)
+#include "xdg-shell-client-protocol.h"
+#include "viewporter-client-protocol.h"
+#include "pointer-constraints-unstable-v1-client-protocol.h"
+#include "relative-pointer-unstable-v1-client-protocol.h"
+#include "xdg-decoration-unstable-v1-client-protocol.h"
 
 // System headers
 #include <stdlib.h>
@@ -22,6 +26,45 @@
 #include <sys/syscall.h>
 #include <errno.h>
 #include <stdio.h>
+#include <dlfcn.h>
+
+// Forward declarations for dynamic libdecor loading (GLFW pattern)
+// These allow us to use libdecor types without requiring compile-time dependency
+struct libdecor;
+struct libdecor_frame;
+struct libdecor_state;
+struct libdecor_configuration;
+
+enum libdecor_error {
+    LIBDECOR_ERROR_COMPOSITOR_INCOMPATIBLE,
+    LIBDECOR_ERROR_INVALID_FRAME_CONFIGURATION,
+};
+
+struct libdecor_interface {
+    void (*error)(struct libdecor*, enum libdecor_error, const char*);
+};
+
+struct libdecor_frame_interface {
+    void (*configure)(struct libdecor_frame*, struct libdecor_configuration*, void*);
+    void (*close)(struct libdecor_frame*, void*);
+    void (*commit)(struct libdecor_frame*, void*);
+    void (*dismiss_popup)(struct libdecor_frame*, const char*, void*);
+};
+
+enum libdecor_window_state {
+    LIBDECOR_WINDOW_STATE_NONE = 0,
+    LIBDECOR_WINDOW_STATE_ACTIVE = 1,
+    LIBDECOR_WINDOW_STATE_MAXIMIZED = 2,
+    LIBDECOR_WINDOW_STATE_FULLSCREEN = 4,
+};
+
+enum libdecor_capabilities {
+    LIBDECOR_ACTION_MOVE = 1,
+    LIBDECOR_ACTION_RESIZE = 2,
+    LIBDECOR_ACTION_MINIMIZE = 4,
+    LIBDECOR_ACTION_FULLSCREEN = 8,
+    LIBDECOR_ACTION_CLOSE = 16,
+};
 
 // C helper for memfd_create (syscall not available in Swift)
 static inline int lumina_memfd_create(const char *name, unsigned int flags) {
@@ -49,6 +92,35 @@ static inline const struct wl_interface* lumina_wl_seat_interface(void) {
 
 static inline const struct wl_interface* lumina_wl_output_interface(void) {
     return &wl_output_interface;
+}
+
+static inline const struct wl_interface* lumina_wl_subcompositor_interface(void) {
+    return &wl_subcompositor_interface;
+}
+
+static inline const struct wl_interface* lumina_wl_data_device_manager_interface(void) {
+    return &wl_data_device_manager_interface;
+}
+
+// Extension protocol interfaces (GLFW pattern)
+static inline const struct wl_interface* lumina_xdg_wm_base_interface(void) {
+    return &xdg_wm_base_interface;
+}
+
+static inline const struct wl_interface* lumina_wp_viewporter_interface(void) {
+    return &wp_viewporter_interface;
+}
+
+static inline const struct wl_interface* lumina_zwp_pointer_constraints_v1_interface(void) {
+    return &zwp_pointer_constraints_v1_interface;
+}
+
+static inline const struct wl_interface* lumina_zwp_relative_pointer_manager_v1_interface(void) {
+    return &zwp_relative_pointer_manager_v1_interface;
+}
+
+static inline const struct wl_interface* lumina_zxdg_decoration_manager_v1_interface(void) {
+    return &zxdg_decoration_manager_v1_interface;
 }
 
 // User data struct for libdecor window callbacks

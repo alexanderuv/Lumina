@@ -160,8 +160,6 @@ public final class WaylandMonitorTracker: @unchecked Sendable {
         outputsLock.lock()
         _outputs[name] = outputInfo
         outputsLock.unlock()
-
-        logger.logPlatformCall("Bound wl_output (name=\(name), version=\(boundVersion))")
     }
 
     /// Handle wl_output removal (global_remove event).
@@ -177,7 +175,6 @@ public final class WaylandMonitorTracker: @unchecked Sendable {
 
         if let outputInfo = outputInfo {
             wl_output_destroy(outputInfo.output)
-            logger.logEvent("Removed wl_output (name=\(name))")
         }
     }
 
@@ -252,7 +249,6 @@ public final class WaylandMonitorTracker: @unchecked Sendable {
             )
 
             monitors.append(monitor)
-            logger.logEvent("Built monitor: \(name) (\(outputInfo.width)×\(outputInfo.height) @ \(scaleFactor)x)")
         }
 
         return monitors
@@ -379,7 +375,7 @@ private func outputNameCallback(
     output: OpaquePointer?,
     name: UnsafePointer<CChar>?
 ) {
-    guard let userData = userData, let name = name else { return }
+    guard let userData, let name else { return }
 
     let outputInfo = Unmanaged<WaylandMonitorTracker.OutputInfo>.fromOpaque(userData).takeUnretainedValue()
     outputInfo.model = String(cString: name)  // Override model with proper name if available
