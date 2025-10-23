@@ -56,7 +56,6 @@ public final class WaylandPlatform: LuminaPlatform {
 
     public init() throws {
         logger = LuminaLogger(label: "com.lumina.wayland.platform", level: .info)
-        logger.logEvent("Initializing Wayland platform")
 
         // Connect to Wayland display
         guard let display = wl_display_connect(nil) else {
@@ -68,7 +67,6 @@ public final class WaylandPlatform: LuminaPlatform {
             )
         }
         self.display = display
-        logger.logPlatformCall("wl_display_connect() -> \(display)")
 
         // Get registry
         guard let registry = wl_display_get_registry(display) else {
@@ -81,11 +79,9 @@ public final class WaylandPlatform: LuminaPlatform {
             )
         }
         self.registry = registry
-        logger.logPlatformCall("wl_display_get_registry() -> \(registry)")
 
         // Initialize monitor tracker
         self.monitorTracker = WaylandMonitorTracker(display: display)
-        logger.logEvent("Monitor tracker initialized")
 
         // Set up registry listener for wl_output globals
         let context = RegistryContext(monitorTracker: monitorTracker)
@@ -97,17 +93,12 @@ public final class WaylandPlatform: LuminaPlatform {
             global_remove: registryGlobalRemoveCallback
         )
         wl_registry_add_listener(registry, &registryListener, contextPtr)
-        logger.logPlatformCall("wl_registry_add_listener()")
 
         // Roundtrip to bind all globals (especially wl_output for monitors)
         wl_display_roundtrip(display)
-        logger.logPlatformCall("wl_display_roundtrip() - discovered globals")
 
         // Second roundtrip to process initial events from wl_output
         wl_display_roundtrip(display)
-        logger.logPlatformCall("wl_display_roundtrip() - processed initial events")
-
-        logger.logEvent("Wayland platform initialized successfully")
     }
 
     // MARK: - Monitor Enumeration
@@ -130,8 +121,6 @@ public final class WaylandPlatform: LuminaPlatform {
         }
 
         appCreated = true
-        logger.logEvent("Creating Wayland application")
-
         return try WaylandApplication(platform: self)
     }
 
@@ -170,7 +159,6 @@ public final class WaylandPlatform: LuminaPlatform {
     // MARK: - Cleanup
 
     deinit {
-        logger.logEvent("Cleaning up Wayland platform")
         if let registry = registry {
             wl_registry_destroy(registry)
         }
@@ -205,7 +193,7 @@ private func registryGlobalCallback(
     interface: UnsafePointer<CChar>?,
     version: UInt32
 ) {
-    guard let userData = userData, let interface = interface, let registry = registry else { return }
+    guard let userData, let interface, let registry else { return }
     let context = Unmanaged<RegistryContext>.fromOpaque(userData).takeUnretainedValue()
     let interfaceName = String(cString: interface)
 

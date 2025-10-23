@@ -54,10 +54,6 @@ public struct WaylandWindow: LuminaWindow {
     /// Maximum size constraint
     private var maxSize: LogicalSize?
 
-    /// Reference to application for event posting (weak to avoid retain cycles)
-    /// Note: This is stored as an opaque pointer to avoid circular dependencies
-    private weak var application: AnyObject?
-
     /// User data pointer for libdecor callbacks (C struct) - created on show()
     private var userDataPtr: UnsafeMutablePointer<LuminaWindowUserData>?
 
@@ -80,7 +76,6 @@ public struct WaylandWindow: LuminaWindow {
     ///   - title: Window title
     ///   - size: Initial logical size
     ///   - resizable: Whether window can be resized
-    ///   - application: Reference to application for event posting
     ///   - inputState: Input state for surface registration
     /// - Returns: Newly created window
     /// - Throws: `LuminaError.windowCreationFailed` if creation fails
@@ -93,7 +88,6 @@ public struct WaylandWindow: LuminaWindow {
         title: String,
         size: LogicalSize,
         resizable: Bool,
-        application: AnyObject?,
         inputState: WaylandInputState?
     ) throws -> WaylandWindow {
         guard let surface = wl_compositor_create_surface(compositor) else {
@@ -141,7 +135,6 @@ public struct WaylandWindow: LuminaWindow {
             isVisible: false,
             minSize: resizable ? nil : size,
             maxSize: resizable ? nil : size,
-            application: application,
             userDataPtr: nil,
             frameInterface: frameInterface,
             inputState: inputState
@@ -173,13 +166,6 @@ public struct WaylandWindow: LuminaWindow {
                 )
             }
             self.userDataPtr = userDataPtr
-
-            if let appContext = application as? WaylandApplicationContext {
-                while !appContext.state.libdecorReady {
-                    _ = wl_display_dispatch(display)
-                    _ = libdecor_dispatch(decorContext, 0)
-                }
-            }
 
             // Create libdecor frame using shared interface
             let frame = libdecor_decorate(

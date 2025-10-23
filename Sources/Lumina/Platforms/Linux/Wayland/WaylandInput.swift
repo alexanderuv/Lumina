@@ -279,14 +279,12 @@ private func seatCapabilitiesCallback(
 
             inputState.state.pointer = pointer
             inputState.setupPointerListener(pointer)
-            logger.logEvent("Wayland pointer initialized")
         }
     } else {
         // Pointer capability removed (rare but possible)
         if let pointer = inputState.state.pointer {
             wl_pointer_release(pointer)
             inputState.state.pointer = nil
-            logger.logEvent("Wayland pointer removed")
         }
     }
 
@@ -300,14 +298,12 @@ private func seatCapabilitiesCallback(
 
             inputState.state.keyboard = keyboard
             inputState.setupKeyboardListener(keyboard)
-            logger.logEvent("Wayland keyboard initialized")
         }
     } else {
         // Keyboard capability removed (rare but possible)
         if let keyboard = inputState.state.keyboard {
             wl_keyboard_release(keyboard)
             inputState.state.keyboard = nil
-            logger.logEvent("Wayland keyboard removed")
         }
     }
 }
@@ -633,8 +629,6 @@ private func keyboardKeymapCallback(
 
     inputState.state.xkbKeymap = keymap
     inputState.state.xkbState = state
-
-    logger.logEvent("XKB keymap loaded successfully")
 }
 
 /// Keyboard enter callback (C function).
