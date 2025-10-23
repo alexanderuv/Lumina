@@ -152,6 +152,9 @@ final class WaylandInputState {
     /// This must be called when creating windows to enable proper event routing.
     /// Wayland events reference wl_surface pointers, which we map to WindowIDs.
     ///
+    /// NOTE: libdecor_decorate will overwrite surface user data with LuminaWindowUserData,
+    /// so we only maintain the dictionary mapping for cleanup.
+    ///
     /// - Parameters:
     ///   - surface: The wl_surface pointer
     ///   - windowID: The Lumina WindowID to associate with this surface
@@ -176,15 +179,36 @@ final class WaylandInputState {
 
     /// Lookup WindowID from wl_surface pointer.
     ///
+    /// libdecor sets LuminaWindowUserData as surface user data, which contains
+    /// the WindowID split into high/low UInt64 values. We reconstruct it here.
+    ///
     /// SAFETY: This is nonisolated because it's called from Wayland input callbacks
     /// that run synchronously on the main thread during wl_display_dispatch().
     ///
     /// - Parameter surface: The wl_surface pointer
-    /// - Returns: The WindowID, or nil if not registered
+    /// - Returns: The WindowID, or nil if not a Lumina window
     nonisolated fileprivate func windowID(for surface: OpaquePointer?) -> WindowID? {
         guard let surface = surface else { return nil }
-        let surfaceID = UInt(bitPattern: surface)
-        return state.surfaceToWindowID[surfaceID]
+
+        // Get user data from surface (set by libdecor_decorate to LuminaWindowUserData)
+        guard let userData = wl_surface_get_user_data(surface) else {
+            return nil
+        }
+
+        // Cast to LuminaWindowUserData
+        let windowData = userData.assumingMemoryBound(to: LuminaWindowUserData.self)
+
+        // Reconstruct UUID from high/low UInt64 values (inverse of encoding in WaylandWindow.swift)
+        let high = windowData.pointee.window_id_high
+        let low = windowData.pointee.window_id_low
+
+        var uuidBytes: uuid_t = (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
+        withUnsafeMutableBytes(of: &uuidBytes) { ptr in
+            ptr.storeBytes(of: high, toByteOffset: 0, as: UInt64.self)
+            ptr.storeBytes(of: low, toByteOffset: 8, as: UInt64.self)
+        }
+
+        return WindowID(id: UUID(uuid: uuidBytes))
     }
 
     // MARK: - Event Queue Management
