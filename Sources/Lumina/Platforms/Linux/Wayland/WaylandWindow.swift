@@ -255,10 +255,21 @@ public struct WaylandWindow: LuminaWindow {
     }
 
     public func size() -> LogicalSize {
+        // Read from user data (source of truth updated by configure callback)
+        // Fall back to currentSize if frame not created yet
+        if let userDataPtr = userDataPtr {
+            return LogicalSize(
+                width: Float(userDataPtr.pointee.current_width),
+                height: Float(userDataPtr.pointee.current_height)
+            )
+        }
         return currentSize
     }
 
     public mutating func resize(_ size: LogicalSize) {
+        // Note: Programmatic resize doesn't really work on Wayland
+        // The compositor controls window sizes via configure events
+        // This method is kept for API compatibility but is largely a no-op
         currentSize = size
 
         if let eglWindow = eglWindow {

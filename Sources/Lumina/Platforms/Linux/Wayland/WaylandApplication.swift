@@ -386,20 +386,28 @@ public final class WaylandApplication: LuminaApp {
             checkDisplayError()
         }
 
-        // 4. Process input events from WaylandInputState
+        // 4. Process window events from C callbacks
+        if let callbackContext = callbackContext {
+            let windowEvents = callbackContext.windowEventQueue.removeAll()
+            for windowEvent in windowEvents {
+                eventQueue.append(windowEvent)
+            }
+        }
+
+        // 5. Process input events from WaylandInputState
         if let inputState = inputState {
             while let inputEvent = inputState.dequeueEvent() {
                 eventQueue.append(inputEvent)
             }
         }
 
-        // 5. Process user events from background threads
+        // 6. Process user events from background threads
         let userEvents = userEventQueue.removeAll()
         for userEvent in userEvents {
             eventQueue.append(.user(userEvent))
         }
 
-        // 6. Return next queued event
+        // 7. Return next queued event
         return eventQueue.isEmpty ? nil : eventQueue.removeFirst()
     }
 
@@ -573,6 +581,26 @@ private final class UserEventQueue: @unchecked Sendable {
     }
 }
 
+/// Thread-safe window event queue for C callbacks to post window events.
+internal final class WindowEventQueue: @unchecked Sendable {
+    private let lock = NSLock()
+    private var events: [Event] = []
+
+    func append(_ event: Event) {
+        lock.lock()
+        defer { lock.unlock() }
+        events.append(event)
+    }
+
+    func removeAll() -> [Event] {
+        lock.lock()
+        defer { lock.unlock() }
+        let allEvents = events
+        events.removeAll()
+        return allEvents
+    }
+}
+
 /// Context object to pass WaylandApplication state to C callbacks.
 ///
 /// This is necessary because C callbacks receive void* userData, but we need
@@ -584,11 +612,13 @@ internal class WaylandApplicationContext {
     let state: WaylandApplication.State
     weak var inputState: WaylandInputState?
     let logger: LuminaLogger
+    let windowEventQueue: WindowEventQueue
 
     init(state: WaylandApplication.State, inputState: WaylandInputState? = nil) {
         self.state = state
         self.inputState = inputState
         self.logger = LuminaLogger(label: "com.lumina.wayland.context", level: .info)
+        self.windowEventQueue = WindowEventQueue()
     }
 
     /// Set compositor (accessor for private property).
@@ -715,7 +745,7 @@ private func registryGlobalRemoveCallback(
     name: UInt32
 ) {
     guard let userData = userData else { return }
-    let context = Unmanaged<WaylandApplicationContext>.fromOpaque(userData).takeUnretainedValue()
+    let _ = Unmanaged<WaylandApplicationContext>.fromOpaque(userData).takeUnretainedValue()
 
     // Monitor removal is handled by WaylandPlatform
     // Other global removals can be handled here in the future
@@ -812,19 +842,47 @@ func waylandFrameConfigureCallback(
         height = Int32(userDataPtr.pointee.current_height)
     }
 
+    // CRITICAL: Commit libdecor state FIRST (GLFW pattern line 878-880)
+    // This must happen BEFORE any surface operations
+    let state = libdecor_state_new(width, height)
+    defer { libdecor_state_free(state) }
+    libdecor_frame_commit(frame, state, configuration)
+
+    // Check if this is first configure or if size changed (GLFW resizeWindow line 492-493)
+    let isFirstConfigure = !userDataPtr.pointee.configured
+    let oldWidth = Int32(userDataPtr.pointee.current_width)
+    let oldHeight = Int32(userDataPtr.pointee.current_height)
+    let sizeChanged = (width != oldWidth || height != oldHeight)
+
+    // Only proceed with resize if size actually changed or first configure
+    guard isFirstConfigure || sizeChanged else {
+        // No size change, just mark as configured and return
+        userDataPtr.pointee.configured = true
+        return
+    }
+
     // Update current size in user data
     userDataPtr.pointee.current_width = Float(width)
     userDataPtr.pointee.current_height = Float(height)
 
-    userDataPtr.pointee.configured = true
-
-    // Resize EGL window BEFORE committing libdecor state to ensure buffers match
+    // Resize EGL window (GLFW resizeFramebuffer line 473-479)
     if let eglWindow = userDataPtr.pointee.egl_window {
         wl_egl_window_resize(eglWindow, width, height, 0, 0)
     }
 
-    // Create and attach a buffer so the window becomes visible!
-    // Wayland requires at least one buffer attachment before windows appear.
+    // Update opaque region (GLFW setContentAreaOpaque line 447-458)
+    if let surface = userDataPtr.pointee.surface,
+       let compositor = userDataPtr.pointee.compositor {
+        let region = wl_compositor_create_region(compositor)
+        if let region = region {
+            wl_region_add(region, 0, 0, width, height)
+            wl_surface_set_opaque_region(surface, region)
+            wl_region_destroy(region)
+        }
+    }
+
+    // For demo purposes, create a new buffer to show resize working
+    // Production apps would use OpenGL/Vulkan which provides buffers automatically
     if let surface = userDataPtr.pointee.surface,
        let shm = userDataPtr.pointee.shm {
 
@@ -862,7 +920,6 @@ func waylandFrameConfigureCallback(
                     if let buffer = buffer {
                         wl_surface_attach(surface, buffer, 0, 0)
                         wl_surface_damage(surface, 0, 0, width, height)
-
                         wl_shm_pool_destroy(pool)
                     }
                 }
@@ -871,14 +928,13 @@ func waylandFrameConfigureCallback(
         }
     }
 
-    let state = libdecor_state_new(width, height)
-    defer { libdecor_state_free(state) }
-
-    libdecor_frame_commit(frame, state, configuration)
-
+    // Commit surface (GLFW pattern: commit after buffer attach)
     if let surface = userDataPtr.pointee.surface {
         wl_surface_commit(surface)
     }
+
+    // Mark as configured
+    userDataPtr.pointee.configured = true
 }
 
 /// Handle close request from libdecor (C callback)
