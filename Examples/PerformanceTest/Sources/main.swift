@@ -8,7 +8,7 @@ import Foundation
 
 @MainActor
 func measureWindowCreation() throws {
-    // NEW API: Initialize platform first, then create app
+    // Initialize platform first, then create app
     var platform = try createLuminaPlatform()
     var app = try platform.createApp()
 

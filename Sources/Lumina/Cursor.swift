@@ -10,14 +10,8 @@
 /// Thread Safety: All cursor methods must be called from the main thread.
 /// The @MainActor annotation enforces this at compile time.
 ///
-/// Migration from Milestone 0:
+/// Usage:
 /// ```swift
-/// // Old API (Milestone 0):
-/// Cursor.set(.hand)
-/// Cursor.hide()
-/// Cursor.show()
-///
-/// // New API (Milestone 1+):
 /// let cursor = window.cursor()
 /// cursor.set(.hand)
 /// cursor.hide()
@@ -115,9 +109,9 @@ public protocol LuminaCursor: Sendable {
 /// Standard system cursor types.
 ///
 /// These cursor shapes are provided by the operating system and
-/// have consistent appearance across the platform. In Milestone 0,
+/// have consistent appearance across the platform. Currently,
 /// only system cursors are supported; custom cursor images will be
-/// added in a future milestone.
+/// added in the future.
 public enum SystemCursor: Sendable {
     /// Default arrow pointer
     case arrow

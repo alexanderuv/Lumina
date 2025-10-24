@@ -447,7 +447,7 @@ struct LinuxClipboard {
     }
 
     static func hasChanged() -> Bool {
-        // Change tracking not implemented in Milestone 1
+        // Change tracking not implemented yet
         return false
     }
 

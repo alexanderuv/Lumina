@@ -7,7 +7,7 @@ import Lumina
 @main
 struct HelloWindow {
     static func main() throws {
-        // NEW API: Initialize platform first, then create app
+        // Initialize platform first, then create app
         var platform = try createLuminaPlatform()
         var app = try platform.createApp()
 

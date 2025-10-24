@@ -199,7 +199,7 @@ public enum PointerEvent: Sendable {
 /// Mouse button enumeration.
 ///
 /// Represents the physical mouse buttons. Additional buttons beyond these three
-/// are not currently supported in Milestone 0.
+/// are not currently supported.
 public enum MouseButton: Sendable {
     /// Left (primary) mouse button
     case left
@@ -260,8 +260,8 @@ public enum KeyboardEvent: Sendable {
     /// accounting for the current keyboard layout, input method, and dead keys.
     /// Use this for text editing rather than key codes.
     ///
-    /// Note: In Milestone 0, only Latin text input is fully supported.
-    /// IME support for Asian languages will be added in a future milestone.
+    /// Note: Currently, only Latin text input is fully supported.
+    /// IME support for Asian languages will be added in the future.
     ///
     /// - Parameters:
     ///   - windowID: ID of the focused window receiving input
@@ -275,8 +275,8 @@ public enum KeyboardEvent: Sendable {
 /// independent of the current keyboard layout. This allows handling
 /// keys consistently across different layouts (e.g., QWERTY vs AZERTY).
 ///
-/// In Milestone 0, we use raw scan codes. Future milestones will add
-/// named constants for common keys (Escape, Enter, Arrow keys, etc.).
+/// Currently uses raw scan codes. Named constants for common keys
+/// (Escape, Enter, Arrow keys, etc.) will be added in the future.
 ///
 /// Example:
 /// ```swift

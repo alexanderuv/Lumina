@@ -5,7 +5,7 @@ import Lumina
 @main
 struct ScalingDemo {
     static func main() throws {
-        // NEW API: Initialize platform first, then create app
+        // Initialize platform first, then create app
         var platform = try createLuminaPlatform()
 
         // Print monitor information before creating window

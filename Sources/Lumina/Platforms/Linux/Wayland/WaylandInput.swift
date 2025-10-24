@@ -512,7 +512,7 @@ private func pointerAxisSourceCallback(
     pointer: OpaquePointer?,
     axisSource: UInt32
 ) {
-    // Not used in Milestone 1 - could distinguish wheel vs trackpad scrolling
+    // Not used yet - could distinguish wheel vs trackpad scrolling
 }
 
 /// Pointer axis stop callback (C function).
@@ -524,7 +524,7 @@ private func pointerAxisStopCallback(
     time: UInt32,
     axis: UInt32
 ) {
-    // Not used in Milestone 1 - could support scroll momentum
+    // Not used yet - could support scroll momentum
 }
 
 /// Pointer axis discrete callback (C function).
@@ -536,7 +536,7 @@ private func pointerAxisDiscreteCallback(
     axis: UInt32,
     discrete: Int32
 ) {
-    // Not used in Milestone 1 - could provide discrete scroll counts
+    // Not used yet - could provide discrete scroll counts
 }
 
 // MARK: - Keyboard Listener Setup
@@ -758,8 +758,8 @@ private func keyboardRepeatInfoCallback(
     rate: Int32,
     delay: Int32
 ) {
-    // Not used in Milestone 1 - key repeat is handled by compositor
-    // Future milestones could implement client-side key repeat
+    // Not used yet - key repeat is handled by compositor
+    // Could implement client-side key repeat in the future
 }
 
 // MARK: - XKB Helper Methods
