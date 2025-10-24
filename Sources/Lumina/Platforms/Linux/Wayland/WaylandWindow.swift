@@ -202,10 +202,14 @@ public final class WaylandWindow: LuminaWindow {
                     surface: surface,
                     shm: shm,
                     compositor: compositor,
-                    configured: false
+                    configured: false,
+                    window_ptr: Unmanaged.passUnretained(self).toOpaque()
                 )
             }
             self.userDataPtr = userDataPtr
+
+            // Set surface user data to LuminaWindowUserData (for both pointer input and surface listener)
+            wl_surface_set_user_data(surface, userDataPtr)
 
             // Create libdecor frame using shared interface
             guard let decorateFunc = loader.libdecor_decorate else {
@@ -406,9 +410,9 @@ public final class WaylandWindow: LuminaWindow {
             preferred_buffer_transform: surfaceHandlePreferredBufferTransform
         )
 
-        let windowPtr = Unmanaged.passUnretained(self).toOpaque()
+        // User data will be set later in show() - we use nil here, callbacks will get it from surface
         _ = withUnsafeMutablePointer(to: &surfaceListener!) { listenerPtr in
-            wl_surface_add_listener(surface, listenerPtr, windowPtr)
+            wl_surface_add_listener(surface, listenerPtr, nil)
         }
     }
 
@@ -543,12 +547,22 @@ private func surfaceHandleEnter(
     surface: OpaquePointer?,
     output: OpaquePointer?
 ) {
-    guard let userData = userData,
+    guard let surface = surface,
           let output = output else {
         return
     }
 
-    let window = Unmanaged<WaylandWindow>.fromOpaque(userData).takeUnretainedValue()
+    // Get user data from surface (LuminaWindowUserData)
+    guard let surfaceUserData = wl_surface_get_user_data(surface) else {
+        return
+    }
+
+    let windowUserData = surfaceUserData.assumingMemoryBound(to: LuminaWindowUserData.self)
+    guard let windowPtr = windowUserData.pointee.window_ptr else {
+        return
+    }
+
+    let window = Unmanaged<WaylandWindow>.fromOpaque(windowPtr).takeUnretainedValue()
 
     // Look up the scale factor for this output from monitor tracker
     guard let monitorTracker = window.monitorTracker else {
@@ -589,12 +603,22 @@ private func surfaceHandleLeave(
     surface: OpaquePointer?,
     output: OpaquePointer?
 ) {
-    guard let userData = userData,
+    guard let surface = surface,
           let output = output else {
         return
     }
 
-    let window = Unmanaged<WaylandWindow>.fromOpaque(userData).takeUnretainedValue()
+    // Get user data from surface (LuminaWindowUserData)
+    guard let surfaceUserData = wl_surface_get_user_data(surface) else {
+        return
+    }
+
+    let windowUserData = surfaceUserData.assumingMemoryBound(to: LuminaWindowUserData.self)
+    guard let windowPtr = windowUserData.pointee.window_ptr else {
+        return
+    }
+
+    let window = Unmanaged<WaylandWindow>.fromOpaque(windowPtr).takeUnretainedValue()
 
     // Remove this output from tracked outputs
     window.outputScales.removeAll { $0.output == output }
@@ -613,9 +637,19 @@ private func surfaceHandlePreferredBufferScale(
     surface: OpaquePointer?,
     scale: Int32
 ) {
-    guard let userData = userData else { return }
+    guard let surface = surface else { return }
 
-    let window = Unmanaged<WaylandWindow>.fromOpaque(userData).takeUnretainedValue()
+    // Get user data from surface (LuminaWindowUserData)
+    guard let surfaceUserData = wl_surface_get_user_data(surface) else {
+        return
+    }
+
+    let windowUserData = surfaceUserData.assumingMemoryBound(to: LuminaWindowUserData.self)
+    guard let windowPtr = windowUserData.pointee.window_ptr else {
+        return
+    }
+
+    let window = Unmanaged<WaylandWindow>.fromOpaque(windowPtr).takeUnretainedValue()
 
     window.logger.debug("Compositor preferred buffer scale: \(scale)")
 

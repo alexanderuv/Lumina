@@ -8,6 +8,7 @@ let package = Package(
         .macOS(.v15)
     ],
     traits: [
+        .default(enabledTraits: ["Wayland"]),
         .trait(name: "Wayland", description: "Enable Wayland backend support")
     ],
     dependencies: [

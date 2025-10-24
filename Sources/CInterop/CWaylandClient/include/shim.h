@@ -5,13 +5,13 @@
 #include <wayland-client.h>
 #include <wayland-client-protocol.h>
 
-// Wayland EGL for GPU-accelerated rendering (SDL/GLFW pattern)
+// Wayland EGL for GPU-accelerated rendering
 #include <wayland-egl.h>
 
 // XKB for keyboard handling
 #include <xkbcommon/xkbcommon.h>
 
-// Wayland extension protocols (GLFW pattern)
+// Wayland extension protocols
 #include "xdg-shell-client-protocol.h"
 #include "viewporter-client-protocol.h"
 #include "pointer-constraints-unstable-v1-client-protocol.h"
@@ -28,7 +28,7 @@
 #include <stdio.h>
 #include <dlfcn.h>
 
-// Forward declarations for dynamic libdecor loading (GLFW pattern)
+// Forward declarations for dynamic libdecor loading
 // These allow us to use libdecor types without requiring compile-time dependency
 struct libdecor;
 struct libdecor_frame;
@@ -102,7 +102,7 @@ static inline const struct wl_interface* lumina_wl_data_device_manager_interface
     return &wl_data_device_manager_interface;
 }
 
-// Extension protocol interfaces (GLFW pattern)
+// Extension protocol interfaces
 static inline const struct wl_interface* lumina_xdg_wm_base_interface(void) {
     return &xdg_wm_base_interface;
 }
@@ -125,17 +125,18 @@ static inline const struct wl_interface* lumina_zxdg_decoration_manager_v1_inter
 
 // User data struct for libdecor window callbacks
 // This is a plain C struct that can be safely allocated and passed to C APIs
-// SDL/GLFW pattern: Store EGL window pointer for resize in configure callback
+// Store EGL window pointer for resize in configure callback
 typedef struct {
     uint64_t window_id_high;
     uint64_t window_id_low;
     float current_width;
     float current_height;
-    struct wl_egl_window* egl_window;  // EGL window for resizing (SDL pattern)
-    struct wl_surface* surface;         // Surface for damage/commit (SDL pattern)
+    struct wl_egl_window* egl_window;  // EGL window for resizing
+    struct wl_surface* surface;         // Surface for damage/commit
     struct wl_shm* shm;                 // Shared memory for buffer creation
     struct wl_compositor* compositor;   // Compositor for region creation
-    _Bool configured;                   // GLFW pattern: Track if configure callback received
+    _Bool configured;                   // Track if configure callback received
+    void* window_ptr;                   // Back-reference to WaylandWindow (for surface listener callbacks)
 } LuminaWindowUserData;
 
 // C helper to initialize libdecor_frame_interface
