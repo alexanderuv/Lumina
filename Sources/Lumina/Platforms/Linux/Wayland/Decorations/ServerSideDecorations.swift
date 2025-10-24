@@ -19,6 +19,7 @@ final class ServerSideDecorations: DecorationStrategy {
     private let decorationManager: OpaquePointer
     private var toplevelDecoration: OpaquePointer?
     private var decorationListener: zxdg_toplevel_decoration_v1_listener?
+    private let logger = LuminaLogger(label: "lumina.wayland.decorations.ssd", level: .info)
 
     // MARK: - Initialization
 
@@ -59,7 +60,7 @@ final class ServerSideDecorations: DecorationStrategy {
             ZXDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE.rawValue
         )
 
-        print("[SSD] Created server-side decorations")
+        logger.logDebug("Created server-side decorations")
     }
 
     func setTitle(_ title: String) {
@@ -94,7 +95,7 @@ final class ServerSideDecorations: DecorationStrategy {
             toplevelDecoration = nil
         }
         decorationListener = nil
-        print("[SSD] Destroyed server-side decorations")
+        logger.logDebug("Destroyed server-side decorations")
     }
 
     // MARK: - Listener Setup
@@ -129,11 +130,11 @@ final class ServerSideDecorations: DecorationStrategy {
     private func handleConfigure(mode: UInt32) {
         switch mode {
         case ZXDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE.rawValue:
-            print("[SSD] WARNING: Compositor wants client-side decorations, but we requested server-side")
+            logger.logError("Compositor wants client-side decorations, but we requested server-side")
         case ZXDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE.rawValue:
-            print("[SSD] Compositor confirmed server-side decorations")
+            logger.logDebug("Compositor confirmed server-side decorations")
         default:
-            print("[SSD] WARNING: Unknown decoration mode: \(mode)")
+            logger.logError("Unknown decoration mode: \(mode)")
         }
     }
 

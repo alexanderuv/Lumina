@@ -842,6 +842,6 @@ extension WaylandInputState {
 // MARK: - Logger
 
 /// Logger instance for Wayland input events.
-private let logger = LuminaLogger(label: "com.lumina.wayland.input", level: .info)
+private let logger = LuminaLogger(label: "lumina.wayland.input", level: .info)
 
 #endif // os(Linux) && LUMINA_WAYLAND

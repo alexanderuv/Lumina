@@ -109,7 +109,7 @@ public final class WaylandMonitorTracker: @unchecked Sendable {
 
     public init(display: OpaquePointer) {
         self.display = display
-        self.logger = LuminaLogger(label: "com.lumina.wayland.monitor", level: .info)
+        self.logger = LuminaLogger(label: "lumina.wayland.monitor", level: .info)
     }
 
     deinit {

@@ -8,8 +8,8 @@
 /// - **LuminaPlatform**: Platform connection, monitor enumeration (exists independently)
 /// - **LuminaApp**: Event loop, window management (requires running process)
 ///
-/// This design matches SDL/GLFW's pattern where you initialize the library before
-/// creating windows and running the event loop.
+/// This design separates platform initialization from the application event loop,
+/// allowing platform-level operations before creating windows.
 ///
 /// Example usage:
 /// ```swift

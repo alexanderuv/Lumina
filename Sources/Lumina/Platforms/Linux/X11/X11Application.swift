@@ -53,7 +53,7 @@ private final class EventQueue: @unchecked Sendable {
 /// #endif
 /// ```
 @MainActor
-struct X11Application: LuminaApp {
+final class X11Application: LuminaApp {
     public typealias Window = X11Window
 
     // MARK: - Platform Reference
@@ -112,7 +112,7 @@ struct X11Application: LuminaApp {
         self.platform = platform
 
         // Initialize logger first
-        self.logger = LuminaLogger.makeLogger(label: "com.lumina.x11")
+        self.logger = LuminaLogger.makeLogger(label: "lumina.x11")
         logger.logInfo("Initializing X11 application from platform")
 
         // Access platform resources
@@ -210,7 +210,7 @@ struct X11Application: LuminaApp {
         logger.logStateTransition("X11 application initialized successfully")
     }
 
-    mutating func run() throws {
+    func run() throws {
         shouldQuit = false
         logger.logStateTransition("Event loop started: mode = run (blocking)")
 
@@ -225,18 +225,18 @@ struct X11Application: LuminaApp {
         logger.logStateTransition("Event loop exited")
     }
 
-    mutating func poll() throws -> Event? {
+    func poll() throws -> Event? {
         return pumpEvents(mode: .poll)
     }
 
-    mutating func wait() throws {
+    func wait() throws {
         // Block until an event arrives, then queue it for poll() to retrieve
         if let event = pumpEvents(mode: .wait) {
             eventQueue.append(event)
         }
     }
 
-    mutating func pumpEvents(mode: ControlFlowMode) -> Event? {
+    func pumpEvents(mode: ControlFlowMode) -> Event? {
         logger.logDebug("pumpEvents: mode = \(mode)")
 
         let connection = platform.xcbConnection
@@ -310,7 +310,7 @@ struct X11Application: LuminaApp {
     }
 
     /// Translate XCB event to Lumina event.
-    private mutating func translateXCBEvent(_ xcbEvent: UnsafeMutablePointer<xcb_generic_event_t>) -> Event? {
+    private func translateXCBEvent(_ xcbEvent: UnsafeMutablePointer<xcb_generic_event_t>) -> Event? {
         let responseType = xcb_event_response_type_shim(xcbEvent) & 0x7f
 
         switch Int32(responseType) {
@@ -428,7 +428,7 @@ struct X11Application: LuminaApp {
 
     static func monitorCapabilities() -> MonitorCapabilities {
         // X11 capabilities
-        let logger = LuminaLogger(label: "com.lumina.x11", level: .debug)
+        let logger = LuminaLogger(label: "lumina.x11", level: .debug)
         logger.logCapabilityDetection("Monitor capabilities: dynamic refresh rate = false, fractional scaling = true (Xft.dpi)")
         return MonitorCapabilities(
             supportsDynamicRefreshRate: false,  // Not standard in X11
@@ -437,7 +437,7 @@ struct X11Application: LuminaApp {
     }
 
     static func clipboardCapabilities() -> ClipboardCapabilities {
-        let logger = LuminaLogger(label: "com.lumina.x11", level: .debug)
+        let logger = LuminaLogger(label: "lumina.x11", level: .debug)
         logger.logCapabilityDetection("Clipboard capabilities: text = true, images = false, HTML = false")
         return ClipboardCapabilities(
             supportsText: true,
@@ -451,11 +451,11 @@ struct X11Application: LuminaApp {
         // TODO: Wake up event loop if blocked (requires pipe or similar mechanism)
     }
 
-    mutating func quit() {
+    func quit() {
         shouldQuit = true
     }
 
-    mutating func createWindow(
+    func createWindow(
         title: String,
         size: LogicalSize,
         resizable: Bool,

@@ -2,6 +2,9 @@
 
 import Foundation
 
+/// Logger for Linux platform selection
+private let logger = LuminaLogger(label: "lumina.linux", level: .info)
+
 /// Linux platform backend selection.
 ///
 /// Linux supports multiple display server protocols (Wayland and X11).
@@ -75,9 +78,8 @@ public func createLinuxPlatform(_ backend: LinuxBackend = .auto) throws -> any L
                 return try WaylandPlatform()
             } catch {
                 // Wayland failed, fall back to X11
-                // Log the failure but continue with X11
-                print("[Lumina] Wayland initialization failed: \(error)")
-                print("[Lumina] Falling back to X11")
+                logger.logError("Wayland initialization failed", error: error)
+                logger.logInfo("Falling back to X11")
                 return try X11Platform()
             }
         }

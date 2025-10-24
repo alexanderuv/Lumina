@@ -162,6 +162,7 @@ final class LibdecorLoader: @unchecked Sendable {
 
     private var handle: UnsafeMutableRawPointer?
     private(set) var isAvailable: Bool = false
+    private let logger = LuminaLogger(label: "lumina.wayland.libdecor", level: .info)
 
     // MARK: - Singleton
 
@@ -177,29 +178,29 @@ final class LibdecorLoader: @unchecked Sendable {
     /// - Returns: true if successfully loaded, false otherwise
     func load() -> Bool {
         guard !isAvailable else {
-            print("[LibdecorLoader] Already loaded")
+            logger.logDebug("Already loaded")
             return true
         }
 
         // Try to load libdecor-0.so.0
         guard let handle = dlopen("libdecor-0.so.0", RTLD_LAZY) else {
             let error = String(cString: dlerror())
-            print("[LibdecorLoader] Failed to load libdecor-0.so.0: \(error)")
+            logger.logError("Failed to load libdecor-0.so.0: \(error)")
             return false
         }
 
         self.handle = handle
-        print("[LibdecorLoader] Successfully loaded libdecor-0.so.0")
+        logger.logInfo("Successfully loaded libdecor-0.so.0")
 
         // Load all function pointers
         guard loadSymbols() else {
-            print("[LibdecorLoader] Failed to load all symbols")
+            logger.logError("Failed to load all symbols")
             unload()
             return false
         }
 
         isAvailable = true
-        print("[LibdecorLoader] All symbols loaded successfully")
+        logger.logDebug("All symbols loaded successfully")
         return true
     }
 
@@ -236,7 +237,7 @@ final class LibdecorLoader: @unchecked Sendable {
         libdecor_state_free = nil
 
         isAvailable = false
-        print("[LibdecorLoader] Unloaded library")
+        logger.logDebug("Unloaded library")
     }
 
     // MARK: - Symbol Loading
@@ -273,7 +274,7 @@ final class LibdecorLoader: @unchecked Sendable {
         guard libdecor_new != nil,
               libdecor_decorate != nil,
               libdecor_frame_commit != nil else {
-            print("[LibdecorLoader] Failed to load critical symbols")
+            logger.logError("Failed to load critical symbols")
             return false
         }
 
@@ -283,7 +284,7 @@ final class LibdecorLoader: @unchecked Sendable {
     private func loadSymbol<T>(_ name: String, from handle: UnsafeMutableRawPointer) -> T? {
         guard let symbol = dlsym(handle, name) else {
             let error = String(cString: dlerror())
-            print("[LibdecorLoader] Failed to load symbol '\(name)': \(error)")
+            logger.logError("Failed to load symbol '\(name)': \(error)")
             return nil
         }
         return unsafeBitCast(symbol, to: T.self)
