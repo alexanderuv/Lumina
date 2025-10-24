@@ -17,11 +17,10 @@ This example shows how to force the Wayland backend instead of relying on automa
 
 ### Build Requirements
 - Linux operating system
-- Swift 6.0 or later
+- Swift 6.2 or later (6.1+ minimum for traits)
 - Wayland development libraries installed:
   - Debian/Ubuntu: `sudo apt install libwayland-dev libxkbcommon-dev`
   - Fedora/RHEL: `sudo dnf install wayland-devel libxkbcommon-devel`
-- Lumina's main `Package.swift` must be configured to include Wayland support (see below)
 
 ### Runtime Requirements
 - A running Wayland compositor (GNOME Wayland, KDE Plasma Wayland, Sway, etc.)
@@ -29,23 +28,9 @@ This example shows how to force the Wayland backend instead of relying on automa
 
 ## Setup
 
-Before building this example, you need to enable Wayland support in Lumina's main `Package.swift`.
+### Build the example
 
-### 1. Enable CWaylandLinux dependency
-
-Edit `/home/alexander/dev/Lumina/Package.swift` and uncomment line 34:
-
-```swift
-dependencies: [
-    .product(name: "Logging", package: "swift-log"),
-    .target(name: "CXCBLinux", condition: .when(platforms: [.linux])),
-    .target(name: "CWaylandLinux", condition: .when(platforms: [.linux]))  // Uncomment this line
-],
-```
-
-### 2. Build the example
-
-You must build with the `LUMINA_WAYLAND` flag to enable Wayland support in the Lumina library:
+Enable Wayland support using the `--traits Wayland` flag:
 
 ### Option 1: Use the build script (recommended)
 ```bash
@@ -56,14 +41,14 @@ cd Examples/WaylandDemo
 ### Option 2: Manual build
 ```bash
 cd Examples/WaylandDemo
-swift build -Xswiftc -DLUMINA_WAYLAND
+swift build --traits Wayland
 ```
 
 ## Running
 
 ```bash
 cd Examples/WaylandDemo
-swift run -Xswiftc -DLUMINA_WAYLAND
+swift run --traits Wayland
 ```
 
 Or if you used the build script, it will automatically run after building.
@@ -84,9 +69,9 @@ The example will compile and run with proper error handling when `LUMINA_WAYLAND
 
 ### Build Errors
 
-**Known Issue**: Building with `-Xswiftc -DLUMINA_WAYLAND` currently fails due to incomplete Wayland implementation in Lumina. This is expected and being actively worked on.
+**Known Issue**: Building with `--traits Wayland` currently fails due to incomplete Wayland implementation in Lumina. This is expected and being actively worked on.
 
-If you get "LUMINA_WAYLAND is not defined" when running without the flag:
+If you get "LUMINA_WAYLAND is not defined" when running without the trait:
 - This is expected behavior - the example gracefully handles missing Wayland support
 - The example will show instructions on how to enable Wayland when it's ready
 

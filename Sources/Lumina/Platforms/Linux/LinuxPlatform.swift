@@ -78,8 +78,8 @@ public func createLinuxPlatform(_ backend: LinuxBackend = .auto) throws -> any L
                 return try WaylandPlatform()
             } catch {
                 // Wayland failed, fall back to X11
-                logger.logError("Wayland initialization failed", error: error)
-                logger.logInfo("Falling back to X11")
+                logger.error("Wayland initialization failed: \(error)")
+                logger.info("Falling back to X11")
                 return try X11Platform()
             }
         }

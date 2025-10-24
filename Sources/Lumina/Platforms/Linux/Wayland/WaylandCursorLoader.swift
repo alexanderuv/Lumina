@@ -88,9 +88,9 @@ final class WaylandCursorLoader {
     private func loadLibrary() {
         // Try to load libwayland-cursor.so.0
         guard let handle = dlopen("libwayland-cursor.so.0", RTLD_LAZY | RTLD_LOCAL) else {
-            logger.logError("Failed to load libwayland-cursor.so.0")
+            logger.error("Failed to load libwayland-cursor.so.0")
             if let error = dlerror() {
-                logger.logError("dlopen error: \(String(cString: error))")
+                logger.error("dlopen error: \(String(cString: error))")
             }
             return
         }
@@ -102,7 +102,7 @@ final class WaylandCursorLoader {
               let themeDestroy = loadSymbol(handle, "wl_cursor_theme_destroy", WlCursorThemeDestroyFunc.self),
               let themeGetCursor = loadSymbol(handle, "wl_cursor_theme_get_cursor", WlCursorThemeGetCursorFunc.self),
               let imageGetBuffer = loadSymbol(handle, "wl_cursor_image_get_buffer", WlCursorImageGetBufferFunc.self) else {
-            logger.logError("Failed to load required symbols")
+            logger.error("Failed to load required symbols")
             dlclose(handle)
             self.handle = nil
             return
@@ -114,14 +114,14 @@ final class WaylandCursorLoader {
         self.wl_cursor_image_get_buffer = imageGetBuffer
 
         self.isAvailable = true
-        logger.logInfo("Successfully loaded libwayland-cursor.so.0")
+        logger.info("Successfully loaded libwayland-cursor.so.0")
     }
 
     private func loadSymbol<T>(_ handle: UnsafeMutableRawPointer, _ name: String, _ type: T.Type) -> T? {
         guard let symbol = dlsym(handle, name) else {
-            logger.logError("Failed to load symbol: \(name)")
+            logger.error("Failed to load symbol: \(name)")
             if let error = dlerror() {
-                logger.logError("dlsym error: \(String(cString: error))")
+                logger.error("dlsym error: \(String(cString: error))")
             }
             return nil
         }

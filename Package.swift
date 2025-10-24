@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
@@ -16,6 +16,12 @@ let package = Package(
             targets: ["Lumina"]
         ),
     ],
+    traits: [
+        .trait(
+            name: "Wayland",
+            description: "Enable Wayland backend support on Linux"
+        )
+    ],
     dependencies: [
         // Swift Logging API
         .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0")
@@ -29,13 +35,13 @@ let package = Package(
             dependencies: [
                 .product(name: "Logging", package: "swift-log"),
                 .target(name: "CXCBLinux", condition: .when(platforms: [.linux])),
-                .target(name: "CWaylandClient", condition: .when(platforms: [.linux]))
+                .target(name: "CWaylandClient", condition: .when(traits: ["Wayland"]))
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v6),
                 .enableUpcomingFeature("StrictConcurrency"),
-                .define("LUMINA_X11", .when(platforms: [.linux]))
-                // LUMINA_WAYLAND is opt-in - pass -Xswiftc -DLUMINA_WAYLAND to enable
+                .define("LUMINA_X11", .when(platforms: [.linux])),
+                .define("LUMINA_WAYLAND", .when(traits: ["Wayland"]))
             ]
         ),
 

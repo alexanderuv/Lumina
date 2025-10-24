@@ -25,8 +25,8 @@ Lumina provides a clean, type-safe API for creating windows and handling user in
 - **macOS**: macOS 15.0+ (Sequoia)
 - **Linux**: Ubuntu 24.04+ / Fedora 40+ / Arch Linux (with X11 or Wayland)
 - **Windows**: Windows 11+ (Milestone 0 support)
-- **Swift**: 6.0+
-- **Xcode**: 16.0+ (for macOS development)
+- **Swift**: 6.2+ (6.1+ for traits, 6.2+ recommended)
+- **Xcode**: 16.2+ (for macOS development)
 
 ## Installation
 
@@ -97,12 +97,10 @@ cd Lumina
 swift build
 
 # Build with Wayland support (requires Wayland dependencies installed)
-# Option 1: Using build flag
-swift build -Xswiftc -DLUMINA_WAYLAND
+swift build --traits Wayland
 
-# Option 2: Uncomment CWaylandLinux dependency in Package.swift
-# Edit Package.swift and uncomment the line:
-# .target(name: "CWaylandLinux", condition: .when(platforms: [.linux]))
+# View trait information
+swift package dump-package | grep -A 5 "traits"
 
 # Run tests
 swift test
@@ -115,8 +113,7 @@ swift build -c release
 - By default, Lumina builds with **X11 support only** to avoid build errors if Wayland libraries are not installed
 - To enable Wayland support, you must:
   1. Install Wayland development libraries (see dependencies above)
-  2. Either pass `-Xswiftc -DLUMINA_WAYLAND` when building, OR
-  3. Uncomment the `CWaylandLinux` dependency line in `Package.swift`
+  2. Build with the Wayland trait: `swift build --traits Wayland`
 
 **Backend Selection:**
 The Linux backend is automatically selected at runtime based on your session:

@@ -178,29 +178,29 @@ final class LibdecorLoader: @unchecked Sendable {
     /// - Returns: true if successfully loaded, false otherwise
     func load() -> Bool {
         guard !isAvailable else {
-            logger.logDebug("Already loaded")
+            logger.debug("Already loaded")
             return true
         }
 
         // Try to load libdecor-0.so.0
         guard let handle = dlopen("libdecor-0.so.0", RTLD_LAZY) else {
             let error = String(cString: dlerror())
-            logger.logError("Failed to load libdecor-0.so.0: \(error)")
+            logger.error("Failed to load libdecor-0.so.0: \(error)")
             return false
         }
 
         self.handle = handle
-        logger.logInfo("Successfully loaded libdecor-0.so.0")
+        logger.info("Successfully loaded libdecor-0.so.0")
 
         // Load all function pointers
         guard loadSymbols() else {
-            logger.logError("Failed to load all symbols")
+            logger.error("Failed to load all symbols")
             unload()
             return false
         }
 
         isAvailable = true
-        logger.logDebug("All symbols loaded successfully")
+        logger.debug("All symbols loaded successfully")
         return true
     }
 
@@ -237,7 +237,7 @@ final class LibdecorLoader: @unchecked Sendable {
         libdecor_state_free = nil
 
         isAvailable = false
-        logger.logDebug("Unloaded library")
+        logger.debug("Unloaded library")
     }
 
     // MARK: - Symbol Loading
@@ -274,7 +274,7 @@ final class LibdecorLoader: @unchecked Sendable {
         guard libdecor_new != nil,
               libdecor_decorate != nil,
               libdecor_frame_commit != nil else {
-            logger.logError("Failed to load critical symbols")
+            logger.error("Failed to load critical symbols")
             return false
         }
 
@@ -284,7 +284,7 @@ final class LibdecorLoader: @unchecked Sendable {
     private func loadSymbol<T>(_ name: String, from handle: UnsafeMutableRawPointer) -> T? {
         guard let symbol = dlsym(handle, name) else {
             let error = String(cString: dlerror())
-            logger.logError("Failed to load symbol '\(name)': \(error)")
+            logger.error("Failed to load symbol '\(name)': \(error)")
             return nil
         }
         return unsafeBitCast(symbol, to: T.self)

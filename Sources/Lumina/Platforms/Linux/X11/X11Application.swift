@@ -113,26 +113,26 @@ final class X11Application: LuminaApp {
 
         // Initialize logger first
         self.logger = LuminaLogger.makeLogger(label: "lumina.x11")
-        logger.logInfo("Initializing X11 application from platform")
+        logger.info("Initializing X11 application from platform")
 
         // Access platform resources
         let connection = platform.xcbConnection
 
         // Cache atoms
         do {
-            logger.logPlatformCall("Caching X11 atoms")
+            logger.debug("Caching X11 atoms")
             self.atoms = try X11Atoms.cache(connection: connection)
-            logger.logPlatformCall("X11 atoms cached successfully")
+            logger.debug("X11 atoms cached successfully")
         } catch {
-            logger.logError("Failed to cache X11 atoms", error: error)
+            logger.error("Failed to cache X11 atoms: \(error)")
             throw error
         }
 
         // Initialize XKB for keyboard support
-        logger.logPlatformCall("xkb_context_new()")
+        logger.debug("xkb_context_new()")
         let XKB_CONTEXT_NO_FLAGS = xkb_context_flags(rawValue: 0)
         guard let xkbCtx = xkb_context_new(XKB_CONTEXT_NO_FLAGS) else {
-            logger.logError("Failed to create XKB context")
+            logger.error("Failed to create XKB context")
             throw LuminaError.platformError(
                 platform: "Linux/X11",
                 operation: "xkb_context_new",
@@ -141,12 +141,12 @@ final class X11Application: LuminaApp {
             )
         }
         self.xkbContext = xkbCtx
-        logger.logCapabilityDetection("XKB context created successfully")
+        logger.debug("XKB context created successfully")
 
         // Setup XKB extension
         let xkbMajor: UInt16 = 1
         let xkbMinor: UInt16 = 0
-        logger.logPlatformCall("xkb_x11_setup_xkb_extension(v\(xkbMajor).\(xkbMinor))")
+        logger.debug("xkb_x11_setup_xkb_extension(v\(xkbMajor).\(xkbMinor))")
         let setupResult = xkb_x11_setup_xkb_extension(
             connection,
             xkbMajor,
@@ -156,27 +156,27 @@ final class X11Application: LuminaApp {
         )
 
         guard setupResult != 0 else {
-            logger.logError("XKB extension setup failed")
+            logger.error("XKB extension setup failed")
             xkb_context_unref(xkbCtx)
             throw LuminaError.x11ExtensionMissing(extension: "XKB extension (xkb_x11_setup_xkb_extension failed)")
         }
-        logger.logCapabilityDetection("XKB extension available: v\(xkbMajor).\(xkbMinor)")
+        logger.debug("XKB extension available: v\(xkbMajor).\(xkbMinor)")
 
         // Get XKB device ID
-        logger.logPlatformCall("xkb_x11_get_core_keyboard_device_id()")
+        logger.debug("xkb_x11_get_core_keyboard_device_id()")
         self.xkbDeviceID = xkb_x11_get_core_keyboard_device_id(connection)
         guard xkbDeviceID != -1 else {
-            logger.logError("Failed to get XKB core keyboard device")
+            logger.error("Failed to get XKB core keyboard device")
             xkb_context_unref(xkbCtx)
             throw LuminaError.x11ExtensionMissing(extension: "XKB core keyboard device")
         }
-        logger.logCapabilityDetection("XKB device ID: \(xkbDeviceID)")
+        logger.debug("XKB device ID: \(xkbDeviceID)")
 
         // Create XKB keymap and state from X11 device
-        logger.logPlatformCall("xkb_x11_keymap_new_from_device()")
+        logger.debug("xkb_x11_keymap_new_from_device()")
         let XKB_KEYMAP_COMPILE_NO_FLAGS = xkb_keymap_compile_flags(rawValue: 0)
         guard let keymap = xkb_x11_keymap_new_from_device(xkbCtx, connection, xkbDeviceID, XKB_KEYMAP_COMPILE_NO_FLAGS) else {
-            logger.logError("Failed to create XKB keymap")
+            logger.error("Failed to create XKB keymap")
             xkb_context_unref(xkbCtx)
             throw LuminaError.platformError(
                 platform: "Linux/X11",
@@ -186,9 +186,9 @@ final class X11Application: LuminaApp {
             )
         }
 
-        logger.logPlatformCall("xkb_x11_state_new_from_device()")
+        logger.debug("xkb_x11_state_new_from_device()")
         guard let state = xkb_x11_state_new_from_device(keymap, connection, xkbDeviceID) else {
-            logger.logError("Failed to create XKB state")
+            logger.error("Failed to create XKB state")
             xkb_keymap_unref(keymap)
             xkb_context_unref(xkbCtx)
             throw LuminaError.platformError(
@@ -201,18 +201,18 @@ final class X11Application: LuminaApp {
 
         self.xkbState = state
         xkb_keymap_unref(keymap)  // State keeps a reference, safe to unref
-        logger.logCapabilityDetection("XKB keymap and state initialized successfully")
+        logger.debug("XKB keymap and state initialized successfully")
 
         // Flush connection to ensure all setup requests are sent
-        logger.logPlatformCall("xcb_flush()")
+        logger.debug("xcb_flush()")
         _ = xcb_flush_shim(connection)
 
-        logger.logStateTransition("X11 application initialized successfully")
+        logger.info("X11 application initialized successfully")
     }
 
     func run() throws {
         shouldQuit = false
-        logger.logStateTransition("Event loop started: mode = run (blocking)")
+        logger.info("Event loop started: mode = run (blocking)")
 
         while !shouldQuit {
             // Block waiting for events
@@ -222,7 +222,7 @@ final class X11Application: LuminaApp {
             }
         }
 
-        logger.logStateTransition("Event loop exited")
+        logger.info("Event loop exited")
     }
 
     func poll() throws -> Event? {
@@ -237,7 +237,7 @@ final class X11Application: LuminaApp {
     }
 
     func pumpEvents(mode: ControlFlowMode) -> Event? {
-        logger.logDebug("pumpEvents: mode = \(mode)")
+        logger.debug("pumpEvents: mode = \(mode)")
 
         let connection = platform.xcbConnection
 
@@ -249,7 +249,6 @@ final class X11Application: LuminaApp {
         // Fetch and translate one XCB event based on control flow mode
         switch mode {
         case .wait:
-            logger.logStateTransition("Event loop mode: wait (blocking)")
             // Block until an event arrives
             if let xcbEvent = xcb_wait_for_event(connection) {
                 defer { free(xcbEvent) }
@@ -259,7 +258,6 @@ final class X11Application: LuminaApp {
             }
 
         case .poll:
-            logger.logStateTransition("Event loop mode: poll (non-blocking)")
             // Non-blocking: poll one event
             if let xcbEvent = xcb_poll_for_event(connection) {
                 defer { free(xcbEvent) }
@@ -269,7 +267,6 @@ final class X11Application: LuminaApp {
             }
 
         case .waitUntil(let deadline):
-            logger.logStateTransition("Event loop mode: waitUntil (deadline = \(deadline.date))")
             // Block with timeout using select()
             let fd = xcb_get_file_descriptor_shim(connection)
             let timeoutSeconds = deadline.date.timeIntervalSinceNow
@@ -375,14 +372,14 @@ final class X11Application: LuminaApp {
         case XCB_FOCUS_IN:
             return xcbEvent.withMemoryRebound(to: xcb_focus_in_event_t.self, capacity: 1) { ptr in
                 guard let windowID = windowRegistry.windowID(for: ptr.pointee.event) else { return nil }
-                logger.logEvent("Window focused: id = \(windowID)")
+                logger.info("Window focused: id = \(windowID)")
                 return .window(.focused(windowID))
             }
 
         case XCB_FOCUS_OUT:
             return xcbEvent.withMemoryRebound(to: xcb_focus_out_event_t.self, capacity: 1) { ptr in
                 guard let windowID = windowRegistry.windowID(for: ptr.pointee.event) else { return nil }
-                logger.logEvent("Window unfocused: id = \(windowID)")
+                logger.info("Window unfocused: id = \(windowID)")
                 return .window(.unfocused(windowID))
             }
 
@@ -393,19 +390,19 @@ final class X11Application: LuminaApp {
                 guard data == atoms.WM_DELETE_WINDOW else { return nil }
                 guard let windowID = windowRegistry.windowID(for: ptr.pointee.window) else { return nil }
 
-                logger.logEvent("Window close requested: id = \(windowID)")
-                logger.logPlatformCall("xcb_destroy_window()")
+                logger.info("Window close requested: id = \(windowID)")
+                logger.debug("xcb_destroy_window()")
                 xcb_destroy_window(platform.xcbConnection, ptr.pointee.window)
                 _ = xcb_flush_shim(platform.xcbConnection)
                 windowRegistry.unregister(ptr.pointee.window)
                 onWindowClosed?(windowID)
 
                 if exitOnLastWindowClosed && windowRegistry.isEmpty {
-                    logger.logStateTransition("Last window closed, quitting application")
+                    logger.info("Last window closed, quitting application")
                     shouldQuit = true
                 }
 
-                logger.logEvent("Window closed: id = \(windowID)")
+                logger.info("Window closed: id = \(windowID)")
                 return .window(.closed(windowID))
             }
 
@@ -429,7 +426,7 @@ final class X11Application: LuminaApp {
     static func monitorCapabilities() -> MonitorCapabilities {
         // X11 capabilities
         let logger = LuminaLogger(label: "lumina.x11", level: .debug)
-        logger.logCapabilityDetection("Monitor capabilities: dynamic refresh rate = false, fractional scaling = true (Xft.dpi)")
+        logger.debug("Monitor capabilities: dynamic refresh rate = false, fractional scaling = true (Xft.dpi)")
         return MonitorCapabilities(
             supportsDynamicRefreshRate: false,  // Not standard in X11
             supportsFractionalScaling: true     // Via Xft.dpi
@@ -438,7 +435,7 @@ final class X11Application: LuminaApp {
 
     static func clipboardCapabilities() -> ClipboardCapabilities {
         let logger = LuminaLogger(label: "lumina.x11", level: .debug)
-        logger.logCapabilityDetection("Clipboard capabilities: text = true, images = false, HTML = false")
+        logger.debug("Clipboard capabilities: text = true, images = false, HTML = false")
         return ClipboardCapabilities(
             supportsText: true,
             supportsImages: false,  // Not implemented in M1
@@ -461,7 +458,7 @@ final class X11Application: LuminaApp {
         resizable: Bool,
         monitor: Monitor?
     ) throws -> X11Window {
-        logger.logEvent("Creating window: title = '\(title)', size = \(size), resizable = \(resizable)")
+        logger.info("Creating window: title = '\(title)', size = \(size), resizable = \(resizable)")
 
         let window = try X11Window.create(
             connection: platform.xcbConnection,
@@ -474,7 +471,7 @@ final class X11Application: LuminaApp {
 
         // Register window in registry
         windowRegistry.register(window.xcbWindow, id: window.id)
-        logger.logEvent("Window created successfully: id = \(window.id), xcbWindow = \(window.xcbWindow)")
+        logger.info("Window created successfully: id = \(window.id), xcbWindow = \(window.xcbWindow)")
 
         return window
     }

@@ -3,15 +3,15 @@
 
 set -e
 
-echo "Building WaylandDemo with LUMINA_WAYLAND support..."
+echo "Building WaylandDemo with Wayland trait..."
 echo ""
 
-# Build with LUMINA_WAYLAND flag
-swift build -Xswiftc -DLUMINA_WAYLAND
+# Build with Wayland trait
+swift build --traits Wayland
 
 echo ""
 echo "Build complete! Running WaylandDemo..."
 echo ""
 
 # Run the example
-swift run -Xswiftc -DLUMINA_WAYLAND
+swift run --traits Wayland

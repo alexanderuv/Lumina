@@ -51,11 +51,11 @@ public final class X11Platform: LuminaPlatform {
 
     public init() throws {
         logger = LuminaLogger(label: "lumina.x11.platform", level: .info)
-        logger.logEvent("Initializing X11 platform")
+        logger.info("Initializing X11 platform")
 
         // Connect to X server (DISPLAY environment variable)
         var screenNum: Int32 = 0
-        logger.logPlatformCall("xcb_connect()")
+        logger.debug("xcb_connect()")
         guard let conn = xcb_connect(nil, &screenNum) else {
             throw LuminaError.platformError(
                 platform: "X11",
@@ -79,10 +79,10 @@ public final class X11Platform: LuminaPlatform {
 
         self.connection = conn
         self.screenNumber = screenNum
-        logger.logPlatformCall("xcb_connect() -> screen \(screenNum)")
+        logger.debug("xcb_connect() -> screen \(screenNum)")
 
         // Get setup and screen
-        logger.logPlatformCall("xcb_get_setup()")
+        logger.debug("xcb_get_setup()")
         guard let setup = xcb_get_setup_shim(conn) else {
             xcb_disconnect(conn)
             throw LuminaError.platformError(
@@ -109,7 +109,7 @@ public final class X11Platform: LuminaPlatform {
         }
 
         self.screen = screen
-        logger.logEvent("X11 platform initialized successfully")
+        logger.info("X11 platform initialized successfully")
     }
 
     // MARK: - Monitor Enumeration
@@ -132,7 +132,7 @@ public final class X11Platform: LuminaPlatform {
         }
 
         appCreated = true
-        logger.logEvent("Creating X11 application")
+        logger.info("Creating X11 application")
 
         return try X11Application(platform: self)
     }
@@ -173,7 +173,7 @@ public final class X11Platform: LuminaPlatform {
     // MARK: - Cleanup
 
     deinit {
-        logger.logEvent("Cleaning up X11 platform")
+        logger.info("Cleaning up X11 platform")
         xcb_disconnect(connection)
     }
 }

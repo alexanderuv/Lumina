@@ -64,7 +64,7 @@ public final class WaylandWindow: LuminaWindow {
     fileprivate let inputState: WaylandInputState?
 
     /// Logger for window events
-    private let logger: LuminaLogger
+    fileprivate let logger: LuminaLogger
 
     // MARK: - Scale Tracking
 
@@ -432,7 +432,7 @@ public final class WaylandWindow: LuminaWindow {
         // Apply buffer scale to surface (tells compositor what scale the buffer uses)
         wl_surface_set_buffer_scale(surface, maxScale)
 
-        logger.logDebug("Scale changed: \(oldScale) -> \(maxScale)")
+        logger.debug("Scale changed: \(oldScale) -> \(maxScale)")
 
         // Emit scale change event to application
         if let inputState = inputState {
@@ -530,7 +530,7 @@ public final class WaylandWindow: LuminaWindow {
     nonisolated internal func handleCloseRequest() {
         // Post window close event
         // This would be handled by the application event loop
-        logger.logEvent("Close requested for window \(id)")
+        logger.info("Close requested for window \(id)")
     }
 }
 
@@ -552,7 +552,7 @@ private func surfaceHandleEnter(
 
     // Look up the scale factor for this output from monitor tracker
     guard let monitorTracker = window.monitorTracker else {
-        window.logger.logError("No monitor tracker available for scale lookup")
+        window.logger.error("No monitor tracker available for scale lookup")
         // Default to scale 1 if no monitor tracker
         window.outputScales.append(WaylandWindow.OutputScale(output: output, scale: 1))
         window.updateBufferScaleFromOutputs()
@@ -576,7 +576,7 @@ private func surfaceHandleEnter(
     // Add to tracked outputs
     window.outputScales.append(WaylandWindow.OutputScale(output: output, scale: outputScale))
 
-    window.logger.logDebug("Surface entered output (scale=\(outputScale)), total outputs: \(window.outputScales.count)")
+    window.logger.debug("Surface entered output (scale=\(outputScale)), total outputs: \(window.outputScales.count)")
 
     // Recalculate buffer scale
     window.updateBufferScaleFromOutputs()
@@ -599,7 +599,7 @@ private func surfaceHandleLeave(
     // Remove this output from tracked outputs
     window.outputScales.removeAll { $0.output == output }
 
-    window.logger.logDebug("Surface left output, remaining outputs: \(window.outputScales.count)")
+    window.logger.debug("Surface left output, remaining outputs: \(window.outputScales.count)")
 
     // Recalculate buffer scale
     window.updateBufferScaleFromOutputs()
@@ -617,7 +617,7 @@ private func surfaceHandlePreferredBufferScale(
 
     let window = Unmanaged<WaylandWindow>.fromOpaque(userData).takeUnretainedValue()
 
-    window.logger.logDebug("Compositor preferred buffer scale: \(scale)")
+    window.logger.debug("Compositor preferred buffer scale: \(scale)")
 
     // If compositor supports this event (protocol v6+), prefer it over calculated scale
     // Only update if scale actually changed
@@ -778,7 +778,7 @@ private struct WaylandCursor: LuminaCursor {
 
         // Load cursor from theme
         guard let wlCursorPtr = cursorName.withCString({ getCursor(theme, $0) }) else {
-            logger.logError("Failed to load cursor: \(cursorName)")
+            print("Lumina: Failed to load cursor: \(cursorName)")
             return
         }
 
@@ -792,13 +792,13 @@ private struct WaylandCursor: LuminaCursor {
         guard imageCount > 0,
               let imagesPtr = wlCursor.images,
               let imagePtr = imagesPtr[0] else {
-            logger.logError("Cursor has no images: \(cursorName)")
+            print("Lumina: Cursor has no images: \(cursorName)")
             return
         }
 
         // Get buffer for cursor image
         guard let buffer = getBuffer(imagePtr) else {
-            logger.logError("Failed to get buffer for cursor: \(cursorName)")
+            print("Lumina: Failed to get buffer for cursor: \(cursorName)")
             return
         }
 

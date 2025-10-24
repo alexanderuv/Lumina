@@ -143,7 +143,7 @@ public final class WaylandMonitorTracker: @unchecked Sendable {
         let interfacePtr = lumina_wl_output_interface()
 
         guard let bound = wl_registry_bind(registry, name, interfacePtr, boundVersion) else {
-            logger.logError("Failed to bind wl_output (name=\(name))")
+            logger.error("Failed to bind wl_output (name=\(name))")
             return
         }
 

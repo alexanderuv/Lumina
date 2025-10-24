@@ -92,7 +92,7 @@ final class ClientSideDecorations: DecorationStrategy {
         attachBufferToSurface(rightSurface)
         attachBufferToSurface(bottomSurface)
 
-        logger.logDebug("Created client-side decorations")
+        logger.debug("Created client-side decorations")
     }
 
     func setTitle(_ title: String) {
@@ -158,7 +158,7 @@ final class ClientSideDecorations: DecorationStrategy {
         rightSubsurface = nil
         bottomSubsurface = nil
 
-        logger.logDebug("Destroyed client-side decorations")
+        logger.debug("Destroyed client-side decorations")
     }
 
     // MARK: - Helper Methods

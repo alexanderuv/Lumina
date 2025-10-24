@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 
 import PackageDescription
 
@@ -7,8 +7,18 @@ let package = Package(
     platforms: [
         .macOS(.v15)
     ],
+    traits: [
+        .trait(name: "Wayland", description: "Enable Wayland backend support")
+    ],
     dependencies: [
-        .package(name: "Lumina", path: "../..")
+        .package(
+            name: "Lumina",
+            path: "../..",
+            traits: [
+                .defaults,
+                .init(name: "Wayland", condition: .when(traits: ["Wayland"]))
+            ]
+        )
     ],
     targets: [
         .executableTarget(
@@ -17,7 +27,8 @@ let package = Package(
             path: "Sources",
             swiftSettings: [
                 .swiftLanguageMode(.v6),
-                .enableUpcomingFeature("StrictConcurrency")
+                .enableUpcomingFeature("StrictConcurrency"),
+                .define("LUMINA_WAYLAND", .when(traits: ["Wayland"]))
             ]
         )
     ]

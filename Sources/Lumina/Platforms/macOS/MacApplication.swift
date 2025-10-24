@@ -98,11 +98,11 @@ struct MacApplication: LuminaApp {
     init() throws {
         // Initialize logger
         self.logger = LuminaLogger.makeLogger(label: "lumina.macos")
-        logger.logInfo("Initializing macOS application")
+        logger.info("Initializing macOS application")
 
         // Ensure NSApplication is initialized
         _ = NSApplication.shared
-        logger.logPlatformCall("NSApplication.shared")
+        logger.debug("NSApplication.shared")
 
         // Create and set app delegate
         let delegate = MacAppDelegate()
@@ -113,16 +113,16 @@ struct MacApplication: LuminaApp {
 
         // Set activation policy to regular app (shows in Dock)
         NSApp.setActivationPolicy(.regular)
-        logger.logPlatformCall("NSApplication.setActivationPolicy(.regular)")
+        logger.debug("NSApplication.setActivationPolicy(.regular)")
 
         // Create a standard application menu with Quit support
         setupApplicationMenu()
 
         // Activate the application
         NSApp.activate(ignoringOtherApps: true)
-        logger.logPlatformCall("NSApplication.activate(ignoringOtherApps: true)")
+        logger.debug("NSApplication.activate(ignoringOtherApps: true)")
 
-        logger.logStateTransition("macOS application initialized successfully")
+        logger.info("macOS application initialized successfully")
     }
 
     /// Set up the standard macOS application menu with Quit command
@@ -150,7 +150,7 @@ struct MacApplication: LuminaApp {
 
     mutating func run() throws {
         shouldQuit = false
-        logger.logStateTransition("Event loop started: mode = run (blocking)")
+        logger.info("Event loop started: mode = run (blocking)")
 
         while !shouldQuit {
             // Block waiting for next event
@@ -170,7 +170,7 @@ struct MacApplication: LuminaApp {
             processUserEvents()
         }
 
-        logger.logStateTransition("Event loop exited")
+        logger.info("Event loop exited")
     }
 
     mutating func poll() throws -> Event? {
@@ -206,7 +206,7 @@ struct MacApplication: LuminaApp {
                             let wasInside = pointerInsideWindow[id] ?? false
                             if !wasInside {
                                 pointerInsideWindow[id] = true
-                                logger.logEvent("Pointer entered window: id = \(id)")
+                                logger.info("Pointer entered window: id = \(id)")
                                 return .pointer(.entered(id))
                             }
                         case .entered(_):
@@ -216,7 +216,7 @@ struct MacApplication: LuminaApp {
                             // Respect exit events, but only if we were inside
                             if pointerInsideWindow[id] == true {
                                 pointerInsideWindow[id] = false
-                                logger.logEvent("Pointer left window: id = \(id)")
+                                logger.info("Pointer left window: id = \(id)")
                             } else {
                                 // Skip spurious exit
                                 continue
@@ -274,19 +274,16 @@ struct MacApplication: LuminaApp {
     }
 
     mutating func pumpEvents(mode: ControlFlowMode) -> Event? {
-        logger.logDebug("pumpEvents: mode = \(mode)")
+        logger.debug("pumpEvents: mode = \(mode)")
 
         // Determine timeout based on control flow mode
         let timeout: Date = switch mode {
         case .wait:
-            logger.logStateTransition("Event loop mode: wait (blocking)")
-            return .distantFuture
+            .distantFuture
         case .poll:
-            logger.logStateTransition("Event loop mode: poll (non-blocking)")
-            return .distantPast
+            .distantPast
         case .waitUntil(let deadline):
-            logger.logStateTransition("Event loop mode: waitUntil (deadline = \(deadline.date))")
-            return deadline.internalDate
+            deadline.internalDate
         }
 
         // Check for redraw requests first (priority handling)
@@ -317,7 +314,7 @@ struct MacApplication: LuminaApp {
                             let wasInside = pointerInsideWindow[id] ?? false
                             if !wasInside {
                                 pointerInsideWindow[id] = true
-                                logger.logEvent("Pointer entered window: id = \(id)")
+                                logger.info("Pointer entered window: id = \(id)")
                                 return .pointer(.entered(id))
                             }
                         case .entered(_):
@@ -327,7 +324,7 @@ struct MacApplication: LuminaApp {
                             // Respect exit events, but only if we were inside
                             if pointerInsideWindow[id] == true {
                                 pointerInsideWindow[id] = false
-                                logger.logEvent("Pointer left window: id = \(id)")
+                                logger.info("Pointer left window: id = \(id)")
                             } else {
                                 // Skip spurious exit
                                 continue
@@ -380,7 +377,7 @@ struct MacApplication: LuminaApp {
         // macOS supports ProMotion (dynamic refresh rate) on newer MacBook Pros
         // and Studio Display. Also supports fractional scaling through Retina modes.
         let logger = LuminaLogger(label: "lumina.macos", level: .debug)
-        logger.logCapabilityDetection("Monitor capabilities: dynamic refresh rate = true (ProMotion), fractional scaling = true (Retina)")
+        logger.debug("Monitor capabilities: dynamic refresh rate = true (ProMotion), fractional scaling = true (Retina)")
         return MonitorCapabilities(
             supportsDynamicRefreshRate: true,  // ProMotion on supported hardware
             supportsFractionalScaling: true     // Retina scaling modes
@@ -391,7 +388,7 @@ struct MacApplication: LuminaApp {
         // macOS supports text clipboard via NSPasteboard
         // Images and HTML support is future work
         let logger = LuminaLogger(label: "lumina.macos", level: .debug)
-        logger.logCapabilityDetection("Clipboard capabilities: text = true, images = false, HTML = false")
+        logger.debug("Clipboard capabilities: text = true, images = false, HTML = false")
         return ClipboardCapabilities(
             supportsText: true,
             supportsImages: false,
@@ -431,7 +428,7 @@ struct MacApplication: LuminaApp {
         resizable: Bool,
         monitor: Monitor?
     ) throws -> LuminaWindow {
-        logger.logEvent("Creating window: title = '\(title)', size = \(size), resizable = \(resizable)")
+        logger.info("Creating window: title = '\(title)', size = \(size), resizable = \(resizable)")
 
         // Capture windowEventQueue for posting close events
         let eventQueue = windowEventQueue
@@ -472,7 +469,7 @@ struct MacApplication: LuminaApp {
 
         // Register the window
         windowRegistry.register(macWindow.windowNumber, id: macWindow.id)
-        logger.logEvent("Window created successfully: id = \(macWindow.id), windowNumber = \(macWindow.windowNumber)")
+        logger.info("Window created successfully: id = \(macWindow.id), windowNumber = \(macWindow.windowNumber)")
 
         return macWindow as LuminaWindow
     }
@@ -482,12 +479,12 @@ struct MacApplication: LuminaApp {
     }
 
     mutating func quit() {
-        logger.logStateTransition("Application quit requested")
+        logger.info("Application quit requested")
 
         // Request application termination
         // This will cause the event loop to exit
         NSApp.stop(nil)
-        logger.logPlatformCall("NSApplication.stop(nil)")
+        logger.debug("NSApplication.stop(nil)")
 
         // Post a dummy event to wake up the event loop immediately
         let dummyEvent = NSEvent.otherEvent(

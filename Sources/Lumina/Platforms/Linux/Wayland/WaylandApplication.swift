@@ -205,23 +205,23 @@ public final class WaylandApplication: LuminaApp {
     /// Non-throwing - if it fails, we'll use SSD or CSD fallback
     private func tryInitializeLibdecor(display: OpaquePointer, appPtr: UnsafeMutableRawPointer) {
         guard libdecorLoader.load() else {
-            logger.logInfo("libdecor not available, will use fallback decorations")
+            logger.info("libdecor not available, will use fallback decorations")
             return
         }
 
         guard let decorInterface = lumina_alloc_libdecor_interface({ _, error, message in
             let errorStr = error == LIBDECOR_ERROR_COMPOSITOR_INCOMPATIBLE ? "compositor incompatible" : "invalid configuration"
             let msg = message.map { String(cString: $0) } ?? "unknown"
-            logger.logError("libdecor error: \(errorStr) - \(msg)")
+            print("Lumina: libdecor error: \(errorStr) - \(msg)")
         }) else {
-            logger.logError("Failed to allocate libdecor interface")
+            logger.error("Failed to allocate libdecor interface")
             return
         }
         self.decorInterface = decorInterface
 
         guard let libdecorNew = libdecorLoader.libdecor_new,
               let decorContext = libdecorNew(display, decorInterface) else {
-            logger.logError("Failed to create libdecor context")
+            logger.error("Failed to create libdecor context")
             lumina_free_libdecor_interface(decorInterface)
             self.decorInterface = nil
             return
@@ -233,7 +233,7 @@ public final class WaylandApplication: LuminaApp {
             waylandFrameCloseCallback,
             waylandFrameCommitCallback
         ) else {
-            logger.logError("Failed to allocate frame interface")
+            logger.error("Failed to allocate frame interface")
             return
         }
         self.frameInterface = frameInterface
@@ -251,7 +251,7 @@ public final class WaylandApplication: LuminaApp {
             }
         }
 
-        logger.logInfo("libdecor initialized successfully")
+        logger.info("libdecor initialized successfully")
     }
 
     /// Dispatch libdecor events using the dynamic loader
@@ -267,13 +267,13 @@ public final class WaylandApplication: LuminaApp {
     /// Non-throwing - if it fails, cursor operations will be no-ops
     private func tryInitializeCursor() {
         guard cursorLoader.isAvailable else {
-            logger.logInfo("libwayland-cursor not available, cursor support disabled")
+            logger.info("libwayland-cursor not available, cursor support disabled")
             return
         }
 
         guard let compositor = state.compositor,
               let shm = state.shm else {
-            logger.logError("Cannot initialize cursor: compositor or shm not available")
+            logger.error("Cannot initialize cursor: compositor or shm not available")
             return
         }
 
@@ -294,7 +294,7 @@ public final class WaylandApplication: LuminaApp {
             }
 
             if state.cursorTheme == nil {
-                logger.logError("Failed to load cursor theme, cursor support disabled")
+                logger.error("Failed to load cursor theme, cursor support disabled")
                 return
             }
 
@@ -307,11 +307,11 @@ public final class WaylandApplication: LuminaApp {
         // Create cursor surface
         state.cursorSurface = wl_compositor_create_surface(compositor)
         if state.cursorSurface == nil {
-            logger.logError("Failed to create cursor surface")
+            logger.error("Failed to create cursor surface")
             return
         }
 
-        logger.logInfo("Cursor theme initialized successfully (size: \(cursorSize))")
+        logger.info("Cursor theme initialized successfully (size: \(cursorSize))")
     }
 
     // MARK: - Event Loop (LuminaApp Protocol)
@@ -399,7 +399,7 @@ public final class WaylandApplication: LuminaApp {
                 wl_display_cancel_read(display)
                 if pollResult == -1 {
                     let errorMsg = String(cString: strerror(errno))
-                    logger.logError("poll() failed: \(errorMsg)")
+                    logger.error("poll() failed: \(errorMsg)")
                 }
             }
 
@@ -436,7 +436,7 @@ public final class WaylandApplication: LuminaApp {
                     wl_display_cancel_read(display)
                     if pollResult == -1 {
                         let errorMsg = String(cString: strerror(errno))
-                        logger.logError("poll() failed: \(errorMsg)")
+                        logger.error("poll() failed: \(errorMsg)")
                     }
                 }
 
@@ -456,7 +456,7 @@ public final class WaylandApplication: LuminaApp {
 
         // 3. Final flush of outgoing requests
         if wl_display_flush(display) == -1 && errno != EAGAIN {
-            logger.logError("wl_display_flush failed")
+            logger.error("wl_display_flush failed")
             checkDisplayError()
         }
 
@@ -487,7 +487,7 @@ public final class WaylandApplication: LuminaApp {
             let protoError = wl_display_get_protocol_error(display, &interface, &id)
 
             let interfaceName = interface.map { String(cString: $0.pointee.name) } ?? "unknown"
-            logger.logError("Wayland protocol error: code=\(protoError) interface=\(interfaceName) id=\(id)")
+            logger.error("Wayland protocol error: code=\(protoError) interface=\(interfaceName) id=\(id)")
 
             // Critical error: compositor disconnected or protocol violation
             // In production, attempt graceful shutdown
@@ -537,13 +537,13 @@ public final class WaylandApplication: LuminaApp {
     private func selectDecorationStrategy() -> DecorationStrategy {
         // Tier 1: libdecor (dynamically loaded)
         if libdecorLoader.isAvailable, decorContext != nil {
-            logger.logInfo("Using libdecor decorations")
+            logger.info("Using libdecor decorations")
             return LibdecorDecorations(loader: libdecorLoader, display: platform.displayConnection)
         }
 
         // Tier 2: Server-side decorations
         if let decorationManager = state.decorationManager {
-            logger.logInfo("Using server-side decorations")
+            logger.info("Using server-side decorations")
             return ServerSideDecorations(decorationManager: decorationManager)
         }
 
@@ -551,7 +551,7 @@ public final class WaylandApplication: LuminaApp {
         if let compositor = state.compositor,
            let subcompositor = state.subcompositor,
            let shm = state.shm {
-            logger.logInfo("Using client-side decorations")
+            logger.info("Using client-side decorations")
             return ClientSideDecorations(
                 compositor: compositor,
                 subcompositor: subcompositor,
@@ -561,7 +561,7 @@ public final class WaylandApplication: LuminaApp {
         }
 
         // Tier 4: No decorations (borderless)
-        logger.logError("No decoration method available, using borderless windows")
+        logger.error("No decoration method available, using borderless windows")
         return NoDecorations()
     }
 

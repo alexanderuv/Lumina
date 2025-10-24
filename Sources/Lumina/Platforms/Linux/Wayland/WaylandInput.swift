@@ -116,7 +116,7 @@ final class WaylandInputState {
 
         if self.xkbContext == nil {
             // Non-fatal: keyboard input will be degraded but application can still run
-            logger.logError("Failed to create XKB context - keyboard input will be limited")
+            logger.error("Failed to create XKB context - keyboard input will be limited")
         }
     }
 
@@ -274,7 +274,7 @@ private func seatCapabilitiesCallback(
     if capabilities & WL_SEAT_CAPABILITY_POINTER.rawValue != 0 {
         if inputState.state.pointer == nil {
             guard let pointer = wl_seat_get_pointer(seat) else {
-                logger.logError("Failed to get wl_pointer interface")
+                logger.error("Failed to get wl_pointer interface")
                 return
             }
 
@@ -293,7 +293,7 @@ private func seatCapabilitiesCallback(
     if capabilities & WL_SEAT_CAPABILITY_KEYBOARD.rawValue != 0 {
         if inputState.state.keyboard == nil {
             guard let keyboard = wl_seat_get_keyboard(seat) else {
-                logger.logError("Failed to get wl_keyboard interface")
+                logger.error("Failed to get wl_keyboard interface")
                 return
             }
 
@@ -582,12 +582,12 @@ private func keyboardKeymapCallback(
 
     // Verify format is XKB v1
     guard format == WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1.rawValue else {
-        logger.logError("Unsupported keymap format: \(format)")
+        logger.error("Unsupported keymap format: \(format)")
         return
     }
 
     guard let xkbContext = inputState.xkbContext else {
-        logger.logError("Cannot load keymap - XKB context not initialized")
+        logger.error("Cannot load keymap - XKB context not initialized")
         return
     }
 
@@ -595,7 +595,7 @@ private func keyboardKeymapCallback(
     let mapSize = Int(size)
     guard let map = mmap(nil, mapSize, PROT_READ, MAP_PRIVATE, fd, 0),
           map != MAP_FAILED else {
-        logger.logError("Failed to mmap keymap: errno \(errno)")
+        logger.error("Failed to mmap keymap: errno \(errno)")
         return
     }
 
@@ -608,7 +608,7 @@ private func keyboardKeymapCallback(
         XKB_KEYMAP_FORMAT_TEXT_V1,
         XKB_KEYMAP_COMPILE_NO_FLAGS
     ) else {
-        logger.logError("Failed to create XKB keymap")
+        logger.error("Failed to create XKB keymap")
         return
     }
 
@@ -624,7 +624,7 @@ private func keyboardKeymapCallback(
 
     // Create new XKB state from keymap
     guard let state = xkb_state_new(keymap) else {
-        logger.logError("Failed to create XKB state")
+        logger.error("Failed to create XKB state")
         xkb_keymap_unref(keymap)
         return
     }

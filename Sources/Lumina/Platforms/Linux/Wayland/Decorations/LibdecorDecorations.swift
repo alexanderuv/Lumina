@@ -52,7 +52,7 @@ final class LibdecorDecorations: DecorationStrategy {
         // Create libdecor frame
         try createLibdecorFrame()
 
-        logger.logDebug("Created libdecor decorations")
+        logger.debug("Created libdecor decorations")
     }
 
     func setTitle(_ title: String) {
@@ -150,7 +150,7 @@ final class LibdecorDecorations: DecorationStrategy {
             libdecorInterface = nil
         }
 
-        logger.logDebug("Destroyed libdecor decorations")
+        logger.debug("Destroyed libdecor decorations")
     }
 
     // MARK: - Libdecor Setup
@@ -166,7 +166,7 @@ final class LibdecorDecorations: DecorationStrategy {
                 ? "compositor incompatible"
                 : "invalid frame configuration"
             let msg = message.map { String(cString: $0) } ?? "unknown"
-            logger.logError("libdecor error: \(errorStr) - \(msg)")
+            print("Lumina: libdecor error: \(errorStr) - \(msg)")
         }
 
         guard let iface = iface else {
@@ -182,7 +182,7 @@ final class LibdecorDecorations: DecorationStrategy {
         }
 
         context = ctx
-        logger.logDebug("Created libdecor context")
+        logger.debug("Created libdecor context")
     }
 
     private func createLibdecorFrame() throws {
@@ -234,7 +234,7 @@ final class LibdecorDecorations: DecorationStrategy {
             frameMap(frame)
         }
 
-        logger.logDebug("Created libdecor frame")
+        logger.debug("Created libdecor frame")
     }
 
     // MARK: - Libdecor Callbacks
@@ -254,7 +254,7 @@ final class LibdecorDecorations: DecorationStrategy {
 
         // Get content size from configuration
         if getContentSize(configuration, frame, &width, &height) {
-            logger.logDebug("Configure: \(width)x\(height)")
+            logger.debug("Configure: \(width)x\(height)")
 
             // Notify window of resize
             window?.handleResize(width: width, height: height)
@@ -274,7 +274,7 @@ final class LibdecorDecorations: DecorationStrategy {
     }
 
     private func handleClose() {
-        logger.logEvent("Close requested")
+        logger.info("Close requested")
         window?.handleCloseRequest()
     }
 

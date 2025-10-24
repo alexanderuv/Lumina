@@ -60,7 +60,7 @@ final class ServerSideDecorations: DecorationStrategy {
             ZXDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE.rawValue
         )
 
-        logger.logDebug("Created server-side decorations")
+        logger.debug("Created server-side decorations")
     }
 
     func setTitle(_ title: String) {
@@ -95,7 +95,7 @@ final class ServerSideDecorations: DecorationStrategy {
             toplevelDecoration = nil
         }
         decorationListener = nil
-        logger.logDebug("Destroyed server-side decorations")
+        logger.debug("Destroyed server-side decorations")
     }
 
     // MARK: - Listener Setup
@@ -130,11 +130,11 @@ final class ServerSideDecorations: DecorationStrategy {
     private func handleConfigure(mode: UInt32) {
         switch mode {
         case ZXDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE.rawValue:
-            logger.logError("Compositor wants client-side decorations, but we requested server-side")
+            logger.error("Compositor wants client-side decorations, but we requested server-side")
         case ZXDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE.rawValue:
-            logger.logDebug("Compositor confirmed server-side decorations")
+            logger.debug("Compositor confirmed server-side decorations")
         default:
-            logger.logError("Unknown decoration mode: \(mode)")
+            logger.error("Unknown decoration mode: \(mode)")
         }
     }
 
