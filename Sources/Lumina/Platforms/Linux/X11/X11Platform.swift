@@ -50,7 +50,7 @@ public final class X11Platform: LuminaPlatform {
     // MARK: - Initialization
 
     public init() throws {
-        logger = LuminaLogger(label: "com.lumina.x11.platform", level: .info)
+        logger = LuminaLogger(label: "lumina.x11.platform", level: .info)
         logger.logEvent("Initializing X11 platform")
 
         // Connect to X server (DISPLAY environment variable)

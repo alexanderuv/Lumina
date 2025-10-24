@@ -104,7 +104,7 @@ public final class MacApplication: LuminaApp {
         // Store platform reference for lifetime management
         self.platform = platform
         // Initialize logger
-        self.logger = LuminaLogger.makeLogger(label: "com.lumina.macos")
+        self.logger = LuminaLogger.makeLogger(label: "lumina.macos")
         logger.logInfo("Initializing macOS application")
 
         // Ensure NSApplication is initialized
@@ -387,7 +387,7 @@ public final class MacApplication: LuminaApp {
     public static func monitorCapabilities() -> MonitorCapabilities {
         // macOS supports ProMotion (dynamic refresh rate) on newer MacBook Pros
         // and Studio Display. Also supports fractional scaling through Retina modes.
-        let logger = LuminaLogger(label: "com.lumina.macos", level: .debug)
+        let logger = LuminaLogger(label: "lumina.macos", level: .debug)
         logger.logCapabilityDetection("Monitor capabilities: dynamic refresh rate = true (ProMotion), fractional scaling = true (Retina)")
         return MonitorCapabilities(
             supportsDynamicRefreshRate: true,  // ProMotion on supported hardware
@@ -398,7 +398,7 @@ public final class MacApplication: LuminaApp {
     public static func clipboardCapabilities() -> ClipboardCapabilities {
         // macOS supports text clipboard via NSPasteboard
         // Images and HTML support is future work
-        let logger = LuminaLogger(label: "com.lumina.macos", level: .debug)
+        let logger = LuminaLogger(label: "lumina.macos", level: .debug)
         logger.logCapabilityDetection("Clipboard capabilities: text = true, images = false, HTML = false")
         return ClipboardCapabilities(
             supportsText: true,

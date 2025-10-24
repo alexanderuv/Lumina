@@ -45,6 +45,7 @@ final class ClientSideDecorations: DecorationStrategy {
 
     private var currentWidth: Int32 = 0
     private var currentHeight: Int32 = 0
+    private let logger = LuminaLogger(label: "lumina.wayland.decorations.csd", level: .info)
 
     // MARK: - Initialization
 
@@ -91,7 +92,7 @@ final class ClientSideDecorations: DecorationStrategy {
         attachBufferToSurface(rightSurface)
         attachBufferToSurface(bottomSurface)
 
-        print("[CSD] Created client-side decorations")
+        logger.logDebug("Created client-side decorations")
     }
 
     func setTitle(_ title: String) {
@@ -157,7 +158,7 @@ final class ClientSideDecorations: DecorationStrategy {
         rightSubsurface = nil
         bottomSubsurface = nil
 
-        print("[CSD] Destroyed client-side decorations")
+        logger.logDebug("Destroyed client-side decorations")
     }
 
     // MARK: - Helper Methods

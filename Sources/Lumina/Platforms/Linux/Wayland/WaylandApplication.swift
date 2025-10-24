@@ -112,7 +112,7 @@ public final class WaylandApplication: LuminaApp {
     /// - Throws: LuminaError.platformError if initialization fails
     internal init(platform: WaylandPlatform) throws {
         self.platform = platform
-        self.logger = LuminaLogger(label: "com.lumina.wayland", level: .info)
+        self.logger = LuminaLogger(label: "lumina.wayland", level: .info)
         self.inputState = WaylandInputState()
     }
 
@@ -205,23 +205,23 @@ public final class WaylandApplication: LuminaApp {
     /// Non-throwing - if it fails, we'll use SSD or CSD fallback
     private func tryInitializeLibdecor(display: OpaquePointer, appPtr: UnsafeMutableRawPointer) {
         guard libdecorLoader.load() else {
-            print("[WaylandApplication] libdecor not available, will use fallback decorations")
+            logger.logInfo("libdecor not available, will use fallback decorations")
             return
         }
 
         guard let decorInterface = lumina_alloc_libdecor_interface({ _, error, message in
             let errorStr = error == LIBDECOR_ERROR_COMPOSITOR_INCOMPATIBLE ? "compositor incompatible" : "invalid configuration"
             let msg = message.map { String(cString: $0) } ?? "unknown"
-            print("[libdecor] Error: \(errorStr) - \(msg)")
+            logger.logError("libdecor error: \(errorStr) - \(msg)")
         }) else {
-            print("[WaylandApplication] Failed to allocate libdecor interface")
+            logger.logError("Failed to allocate libdecor interface")
             return
         }
         self.decorInterface = decorInterface
 
         guard let libdecorNew = libdecorLoader.libdecor_new,
               let decorContext = libdecorNew(display, decorInterface) else {
-            print("[WaylandApplication] Failed to create libdecor context")
+            logger.logError("Failed to create libdecor context")
             lumina_free_libdecor_interface(decorInterface)
             self.decorInterface = nil
             return
@@ -233,7 +233,7 @@ public final class WaylandApplication: LuminaApp {
             waylandFrameCloseCallback,
             waylandFrameCommitCallback
         ) else {
-            print("[WaylandApplication] Failed to allocate frame interface")
+            logger.logError("Failed to allocate frame interface")
             return
         }
         self.frameInterface = frameInterface
@@ -251,7 +251,7 @@ public final class WaylandApplication: LuminaApp {
             }
         }
 
-        print("[WaylandApplication] libdecor initialized successfully")
+        logger.logInfo("libdecor initialized successfully")
     }
 
     /// Dispatch libdecor events using the dynamic loader
@@ -537,13 +537,13 @@ public final class WaylandApplication: LuminaApp {
     private func selectDecorationStrategy() -> DecorationStrategy {
         // Tier 1: libdecor (dynamically loaded)
         if libdecorLoader.isAvailable, decorContext != nil {
-            print("[WaylandApplication] Using libdecor decorations")
+            logger.logInfo("Using libdecor decorations")
             return LibdecorDecorations(loader: libdecorLoader, display: platform.displayConnection)
         }
 
         // Tier 2: Server-side decorations
         if let decorationManager = state.decorationManager {
-            print("[WaylandApplication] Using server-side decorations")
+            logger.logInfo("Using server-side decorations")
             return ServerSideDecorations(decorationManager: decorationManager)
         }
 
@@ -551,7 +551,7 @@ public final class WaylandApplication: LuminaApp {
         if let compositor = state.compositor,
            let subcompositor = state.subcompositor,
            let shm = state.shm {
-            print("[WaylandApplication] Using client-side decorations")
+            logger.logInfo("Using client-side decorations")
             return ClientSideDecorations(
                 compositor: compositor,
                 subcompositor: subcompositor,
@@ -561,7 +561,7 @@ public final class WaylandApplication: LuminaApp {
         }
 
         // Tier 4: No decorations (borderless)
-        print("[WaylandApplication] WARNING: No decoration method available, using borderless windows")
+        logger.logError("No decoration method available, using borderless windows")
         return NoDecorations()
     }
 

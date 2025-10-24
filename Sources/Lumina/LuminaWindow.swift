@@ -306,7 +306,7 @@ public protocol LuminaWindow: Sendable, ~Copyable {
     /// Implementation notes:
     /// - macOS: Returns MacCursor wrapping NSCursor calls
     /// - Windows: Returns WinCursor wrapping Win32 cursor APIs
-    /// - Linux X11: Returns X11Cursor wrapping Xcursor library
+    /// - Linux X11: Returns X11Cursor using system cursor resources
     /// - Linux Wayland: Returns WaylandCursor using cursor-shape-v1
     ///
     /// - Returns: A cursor controller for this window

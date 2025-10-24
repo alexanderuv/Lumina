@@ -5,9 +5,9 @@ import CWaylandClient
 
 /// Dynamic loader for libwayland-cursor.so.0
 ///
-/// Wayland cursor support requires the wayland-cursor library, which provides
-/// cursor theme loading and standard cursor shapes. We dynamically load this
-/// library at runtime to avoid compile-time dependencies.
+/// Wayland cursor support requires dynamically loading cursor theme functionality
+/// which provides cursor theme loading and standard cursor shapes. We dynamically
+/// load this at runtime to avoid compile-time dependencies.
 ///
 /// **Architecture:**
 /// - Singleton pattern (shared instance)
@@ -33,6 +33,7 @@ final class WaylandCursorLoader {
 
     private nonisolated(unsafe) var handle: UnsafeMutableRawPointer?
     private(set) var isAvailable: Bool = false
+    private let logger = LuminaLogger(label: "lumina.wayland.cursor", level: .info)
 
     // MARK: - Function Pointers
 
@@ -87,9 +88,9 @@ final class WaylandCursorLoader {
     private func loadLibrary() {
         // Try to load libwayland-cursor.so.0
         guard let handle = dlopen("libwayland-cursor.so.0", RTLD_LAZY | RTLD_LOCAL) else {
-            print("[WaylandCursorLoader] Failed to load libwayland-cursor.so.0")
+            logger.logError("Failed to load libwayland-cursor.so.0")
             if let error = dlerror() {
-                print("[WaylandCursorLoader] Error: \(String(cString: error))")
+                logger.logError("dlopen error: \(String(cString: error))")
             }
             return
         }
@@ -101,7 +102,7 @@ final class WaylandCursorLoader {
               let themeDestroy = loadSymbol(handle, "wl_cursor_theme_destroy", WlCursorThemeDestroyFunc.self),
               let themeGetCursor = loadSymbol(handle, "wl_cursor_theme_get_cursor", WlCursorThemeGetCursorFunc.self),
               let imageGetBuffer = loadSymbol(handle, "wl_cursor_image_get_buffer", WlCursorImageGetBufferFunc.self) else {
-            print("[WaylandCursorLoader] Failed to load required symbols")
+            logger.logError("Failed to load required symbols")
             dlclose(handle)
             self.handle = nil
             return
@@ -113,14 +114,14 @@ final class WaylandCursorLoader {
         self.wl_cursor_image_get_buffer = imageGetBuffer
 
         self.isAvailable = true
-        print("[WaylandCursorLoader] Successfully loaded libwayland-cursor.so.0")
+        logger.logInfo("Successfully loaded libwayland-cursor.so.0")
     }
 
     private func loadSymbol<T>(_ handle: UnsafeMutableRawPointer, _ name: String, _ type: T.Type) -> T? {
         guard let symbol = dlsym(handle, name) else {
-            print("[WaylandCursorLoader] Failed to load symbol: \(name)")
+            logger.logError("Failed to load symbol: \(name)")
             if let error = dlerror() {
-                print("[WaylandCursorLoader] Error: \(String(cString: error))")
+                logger.logError("dlsym error: \(String(cString: error))")
             }
             return nil
         }

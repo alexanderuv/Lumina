@@ -22,6 +22,7 @@ final class LibdecorDecorations: DecorationStrategy {
     private var frame: OpaquePointer?
     private var frameInterface: UnsafeMutablePointer<libdecor_frame_interface>?
     private var libdecorInterface: UnsafeMutablePointer<libdecor_interface>?
+    private let logger = LuminaLogger(label: "lumina.wayland.decorations.libdecor", level: .info)
 
     // MARK: - Initialization
 
@@ -51,7 +52,7 @@ final class LibdecorDecorations: DecorationStrategy {
         // Create libdecor frame
         try createLibdecorFrame()
 
-        print("[Libdecor] Created libdecor decorations")
+        logger.logDebug("Created libdecor decorations")
     }
 
     func setTitle(_ title: String) {
@@ -149,7 +150,7 @@ final class LibdecorDecorations: DecorationStrategy {
             libdecorInterface = nil
         }
 
-        print("[Libdecor] Destroyed libdecor decorations")
+        logger.logDebug("Destroyed libdecor decorations")
     }
 
     // MARK: - Libdecor Setup
@@ -165,7 +166,7 @@ final class LibdecorDecorations: DecorationStrategy {
                 ? "compositor incompatible"
                 : "invalid frame configuration"
             let msg = message.map { String(cString: $0) } ?? "unknown"
-            print("[Libdecor] Error: \(errorStr) - \(msg)")
+            logger.logError("libdecor error: \(errorStr) - \(msg)")
         }
 
         guard let iface = iface else {
@@ -181,7 +182,7 @@ final class LibdecorDecorations: DecorationStrategy {
         }
 
         context = ctx
-        print("[Libdecor] Created libdecor context")
+        logger.logDebug("Created libdecor context")
     }
 
     private func createLibdecorFrame() throws {
@@ -233,7 +234,7 @@ final class LibdecorDecorations: DecorationStrategy {
             frameMap(frame)
         }
 
-        print("[Libdecor] Created libdecor frame")
+        logger.logDebug("Created libdecor frame")
     }
 
     // MARK: - Libdecor Callbacks
@@ -253,7 +254,7 @@ final class LibdecorDecorations: DecorationStrategy {
 
         // Get content size from configuration
         if getContentSize(configuration, frame, &width, &height) {
-            print("[Libdecor] Configure: \(width)x\(height)")
+            logger.logDebug("Configure: \(width)x\(height)")
 
             // Notify window of resize
             window?.handleResize(width: width, height: height)
@@ -273,7 +274,7 @@ final class LibdecorDecorations: DecorationStrategy {
     }
 
     private func handleClose() {
-        print("[Libdecor] Close requested")
+        logger.logEvent("Close requested")
         window?.handleCloseRequest()
     }
 

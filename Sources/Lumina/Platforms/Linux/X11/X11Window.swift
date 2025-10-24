@@ -23,7 +23,7 @@ import Glibc
 /// window.show()
 /// ```
 @MainActor
-public struct X11Window: LuminaWindow {
+public final class X11Window: LuminaWindow {
     /// Unique Lumina window ID
     public let id: WindowID
 
@@ -41,6 +41,23 @@ public struct X11Window: LuminaWindow {
 
     /// Maximum size constraint
     private var maxSize: LogicalSize?
+
+    /// Internal initializer
+    private init(
+        id: WindowID,
+        xcbWindow: xcb_window_t,
+        connection: OpaquePointer,
+        atoms: X11Atoms,
+        minSize: LogicalSize?,
+        maxSize: LogicalSize?
+    ) {
+        self.id = id
+        self.xcbWindow = xcbWindow
+        self.connection = connection
+        self.atoms = atoms
+        self.minSize = minSize
+        self.maxSize = maxSize
+    }
 
     /// Create a new X11 window.
     ///
@@ -148,22 +165,22 @@ public struct X11Window: LuminaWindow {
         )
     }
 
-    public mutating func show() {
+    public func show() {
         xcb_map_window(connection, xcbWindow)
         _ = xcb_flush_shim(connection)
     }
 
-    public mutating func hide() {
+    public func hide() {
         xcb_unmap_window(connection, xcbWindow)
         _ = xcb_flush_shim(connection)
     }
 
-    public consuming func close() {
+    public func close() {
         xcb_destroy_window(connection, xcbWindow)
         _ = xcb_flush_shim(connection)
     }
 
-    public mutating func setTitle(_ title: String) {
+    public func setTitle(_ title: String) {
         title.withCString { cString in
             let length = UInt32(strlen(cString))
             xcb_change_property(
@@ -195,7 +212,7 @@ public struct X11Window: LuminaWindow {
         )
     }
 
-    public mutating func resize(_ size: LogicalSize) {
+    public func resize(_ size: LogicalSize) {
         // Configure window with new size
         var values: [UInt32] = [UInt32(size.width), UInt32(size.height)]
         xcb_configure_window(
@@ -222,7 +239,7 @@ public struct X11Window: LuminaWindow {
         )
     }
 
-    public mutating func moveTo(_ position: LogicalPosition) {
+    public func moveTo(_ position: LogicalPosition) {
         var values: [UInt32] = [UInt32(position.x), UInt32(position.y)]
         xcb_configure_window(
             connection,
@@ -233,24 +250,24 @@ public struct X11Window: LuminaWindow {
         _ = xcb_flush_shim(connection)
     }
 
-    public mutating func setMinSize(_ size: LogicalSize?) {
+    public func setMinSize(_ size: LogicalSize?) {
         minSize = size
         updateSizeHints()
     }
 
-    public mutating func setMaxSize(_ size: LogicalSize?) {
+    public func setMaxSize(_ size: LogicalSize?) {
         maxSize = size
         updateSizeHints()
     }
 
     private func updateSizeHints() {
         // WM_NORMAL_HINTS using ICCCM size hints structure
-        // This is simplified - a full implementation would use xcb_icccm library
+        // This is simplified - a full implementation would use proper ICCCM structures
         // For now, we'll skip this as it requires more complex structure setup
         // TODO: Implement proper ICCCM size hints
     }
 
-    public mutating func requestFocus() {
+    public func requestFocus() {
         // Request input focus
         xcb_set_input_focus(
             connection,
@@ -268,7 +285,7 @@ public struct X11Window: LuminaWindow {
         return 1.0
     }
 
-    public mutating func requestRedraw() {
+    public func requestRedraw() {
         // Force an expose event by clearing a 1x1 area
         xcb_clear_area(
             connection,
@@ -280,7 +297,7 @@ public struct X11Window: LuminaWindow {
         _ = xcb_flush_shim(connection)
     }
 
-    public mutating func setDecorated(_ decorated: Bool) throws {
+    public func setDecorated(_ decorated: Bool) throws {
         // Use Motif WM hints to control decorations
         struct MotifWMHints {
             var flags: UInt32 = 2  // MWM_HINTS_DECORATIONS
@@ -306,7 +323,7 @@ public struct X11Window: LuminaWindow {
         _ = xcb_flush_shim(connection)
     }
 
-    public mutating func setAlwaysOnTop(_ alwaysOnTop: Bool) throws {
+    public func setAlwaysOnTop(_ alwaysOnTop: Bool) throws {
         // Use _NET_WM_STATE_ABOVE to set always-on-top
         if alwaysOnTop {
             var state = atoms.NET_WM_STATE_ABOVE
@@ -336,7 +353,7 @@ public struct X11Window: LuminaWindow {
         _ = xcb_flush_shim(connection)
     }
 
-    public mutating func setTransparent(_ transparent: Bool) throws {
+    public func setTransparent(_ transparent: Bool) throws {
         // X11 transparency requires ARGB visual which must be set at window creation
         // Cannot be changed after creation
         throw LuminaError.unsupportedPlatformFeature(

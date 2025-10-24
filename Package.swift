@@ -71,7 +71,7 @@ let package = Package(
                 .linkedLibrary("wayland-client"),
                 .linkedLibrary("wayland-egl"),
                 .linkedLibrary("xkbcommon")
-                // libdecor is dynamically loaded at runtime (GLFW pattern)
+                // libdecor is dynamically loaded at runtime
             ],
             plugins: [
                 .plugin(name: "check-wayland-protocols")

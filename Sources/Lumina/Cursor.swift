@@ -50,7 +50,7 @@ public protocol LuminaCursor: Sendable {
     /// Platform Notes:
     /// - macOS: Uses NSCursor standard cursors
     /// - Windows: Uses LoadCursor with system cursor IDs
-    /// - Linux X11: Uses Xcursor library
+    /// - Linux X11: Uses system cursor resources
     /// - Linux Wayland: Uses cursor-shape-v1 protocol
     ///
     /// - Parameter cursor: The cursor shape to display

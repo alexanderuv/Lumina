@@ -44,8 +44,8 @@ internal typealias WindowCloseCallback = @MainActor (WindowID) -> Void
 /// The postUserEvent method is the only exception - it's thread-safe.
 @MainActor
 public protocol LuminaApp: Sendable, ~Copyable {
-    /// The platform-specific window type (SDL/GLFW pattern: platform-specific window structs)
-    /// SDL/GLFW use non-copyable window pointers - we mirror this with ~Copyable
+    /// The platform-specific window type (platform-specific window structs)
+    /// Windows use non-copyable semantics to ensure proper resource management
     associatedtype Window: LuminaWindow
 
     /// Run the event loop until quit (blocking).

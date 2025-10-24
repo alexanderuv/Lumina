@@ -17,7 +17,7 @@ import Logging
 /// // Configure logging at application startup
 /// LogLevel.current = .debug
 ///
-/// let logger = LuminaLogger(label: "com.example.app")
+/// let logger = LuminaLogger(label: "myapp.main")
 /// logger.logEvent("Application started")  // Will be logged
 /// logger.logTrace("Trace message")        // Will NOT be logged (trace > debug)
 /// ```
@@ -88,7 +88,7 @@ public enum LogLevel: Int, Sendable, Comparable {
 ///
 /// Example:
 /// ```swift
-/// let logger = LuminaLogger(label: "com.example.app.window")
+/// let logger = LuminaLogger(label: "myapp.window")
 ///
 /// // Log different event types
 /// logger.logEvent("Window created with ID: \(windowID)")
@@ -106,7 +106,7 @@ public struct LuminaLogger: Sendable {
     /// Create a logger with a specific label.
     ///
     /// The label typically identifies the subsystem or component creating the log.
-    /// Use reverse-DNS notation for consistency (e.g., "com.example.app.window").
+    /// Use dot-separated naming for consistency (e.g., "myapp.window", "lumina.wayland").
     ///
     /// The logger captures the current global log level at initialization time.
     /// This ensures thread-safe operation without requiring @MainActor isolation.
@@ -118,10 +118,10 @@ public struct LuminaLogger: Sendable {
     /// Example:
     /// ```swift
     /// // On MainActor - uses global level
-    /// let appLogger = LuminaLogger(label: "com.example.app")
+    /// let appLogger = LuminaLogger(label: "myapp.main")
     ///
     /// // Explicit level - works from any thread
-    /// let windowLogger = LuminaLogger(label: "com.example.app.window", level: .debug)
+    /// let windowLogger = LuminaLogger(label: "myapp.window", level: .debug)
     /// ```
     public init(label: String, level: LogLevel? = nil) {
         var logger = Logger(label: label)
@@ -147,7 +147,7 @@ public struct LuminaLogger: Sendable {
     /// @MainActor
     /// func setup() {
     ///     LogLevel.current = .debug
-    ///     let logger = LuminaLogger.makeLogger(label: "com.example.app")
+    ///     let logger = LuminaLogger.makeLogger(label: "myapp.main")
     ///     // Logger will use .debug level
     /// }
     /// ```

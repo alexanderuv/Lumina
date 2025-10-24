@@ -48,7 +48,7 @@ public final class WaylandPlatform: LuminaPlatform {
     // MARK: - Initialization
 
     public init() throws {
-        logger = LuminaLogger(label: "com.lumina.wayland.platform", level: .info)
+        logger = LuminaLogger(label: "lumina.wayland.platform", level: .info)
 
         // Connect to Wayland display
         guard let display = wl_display_connect(nil) else {
