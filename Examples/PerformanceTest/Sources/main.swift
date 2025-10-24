@@ -22,7 +22,7 @@ func measureWindowCreation() throws {
         title: "Performance Test",
         size: LogicalSize(width: 800, height: 600),
         resizable: true,
-        monitor: nil as Monitor?
+        monitor: nil
     )
     let elapsed = Date().timeIntervalSince(start) * 1000 // in ms
 
@@ -45,7 +45,7 @@ func measureWindowCreation() throws {
             title: "Test \(i)",
             size: LogicalSize(width: 400, height: 300),
             resizable: true,
-            monitor: nil as Monitor?
+            monitor: nil
         )
         let elapsed = Date().timeIntervalSince(start) * 1000
         times.append(elapsed)

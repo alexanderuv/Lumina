@@ -32,7 +32,7 @@ struct ScalingDemo {
             title: "Scaling Demo - DPI & Scale Factor",
             size: logicalSize,
             resizable: true,
-            monitor: nil as Monitor?
+            monitor: nil
         )
 
         window.show()

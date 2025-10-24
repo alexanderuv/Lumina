@@ -20,7 +20,7 @@ struct InputExplorer {
             title: "Input Explorer - Events",
             size: LogicalSize(width: 600, height: 400),
             resizable: true,
-            monitor: nil as Monitor?
+            monitor: nil
         )
 
         window.show()
