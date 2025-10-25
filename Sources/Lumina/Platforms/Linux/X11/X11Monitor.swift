@@ -246,10 +246,10 @@ public enum X11Monitor {
         width: UInt16,
         height: UInt16
     ) -> Float {
-        // Priority 1: Try XSETTINGS (not implemented in Milestone 1)
+        // Priority 1: Try XSETTINGS (not implemented yet)
         // This requires parsing XSETTINGS_S0 window property, which is complex
 
-        // Priority 2: Try Xft.dpi X resource (not implemented in Milestone 1)
+        // Priority 2: Try Xft.dpi X resource (not implemented yet)
         // This requires X resource database parsing via libX11
 
         // Priority 3: Calculate from physical dimensions

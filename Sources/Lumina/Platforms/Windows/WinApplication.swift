@@ -249,9 +249,8 @@ struct WinApplication: LuminaApp {
 
     private mutating func processUserEvents() {
         let _ = userEventQueue.removeAll()
-        // In Milestone 0, we don't have a callback mechanism yet
         // User events are queued but need to be retrieved through
-        // a future API (event handlers/callbacks will be added later)
+        // a callback mechanism (event handlers/callbacks will be added later)
         // For now, they're just processed and discarded
     }
 

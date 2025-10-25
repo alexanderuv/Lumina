@@ -45,7 +45,7 @@ public enum X11Input {
     /// - 2 = Middle button
     /// - 3 = Right button
     /// - 4/5 = Scroll wheel (handled separately by translateScrollEvent)
-    /// - 8/9 = Additional buttons (not supported in Milestone 1)
+    /// - 8/9 = Additional buttons (not supported yet)
     ///
     /// - Parameters:
     ///   - xcbEvent: Raw XCB event pointer (must be xcb_button_press_event_t or xcb_button_release_event_t)

@@ -242,8 +242,7 @@ private func luminaWndProc(
         // Validate the entire client area to prevent infinite paint loops
         var ps = PAINTSTRUCT()
         if BeginPaint(hwnd, &ps) != nil {
-            // In Milestone 0, we don't have a rendering API yet
-            // Just validate the client area
+            // No rendering API yet - just validate the client area
             EndPaint(hwnd, &ps)
         }
         return 0

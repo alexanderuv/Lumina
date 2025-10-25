@@ -23,7 +23,7 @@ public protocol LuminaWindow: Sendable, ~Copyable {
     /// - macOS: Use makeKeyAndOrderFront or orderFront
     /// - Windows: Use ShowWindow(SW_SHOW)
     /// - Should generate a window visibility event if appropriate
-    mutating func show()
+    func show()
 
     /// Hide the window (make it invisible).
     ///
@@ -31,7 +31,7 @@ public protocol LuminaWindow: Sendable, ~Copyable {
     /// - macOS: Use orderOut
     /// - Windows: Use ShowWindow(SW_HIDE)
     /// - Window state is preserved, can be shown again later
-    mutating func hide()
+    func hide()
 
     /// Close the window and release resources (consumes self).
     ///
@@ -52,7 +52,7 @@ public protocol LuminaWindow: Sendable, ~Copyable {
     /// - Uses borrowing parameter to avoid unnecessary string copies
     ///
     /// - Parameter title: The new window title
-    mutating func setTitle(_ title: String)
+    func setTitle(_ title: String)
 
     /// Get the current window size (logical coordinates).
     ///
@@ -75,7 +75,7 @@ public protocol LuminaWindow: Sendable, ~Copyable {
     /// - Should generate a window resized event
     ///
     /// - Parameter size: The new logical size for the window
-    mutating func resize(_ size: LogicalSize)
+    func resize(_ size: LogicalSize)
 
     /// Get the current window position (screen coordinates).
     ///
@@ -97,7 +97,7 @@ public protocol LuminaWindow: Sendable, ~Copyable {
     /// - Should generate a window moved event
     ///
     /// - Parameter position: The new logical position for the window's top-left corner
-    mutating func moveTo(_ position: LogicalPosition)
+    func moveTo(_ position: LogicalPosition)
 
     /// Set minimum window size constraint.
     ///
@@ -109,7 +109,7 @@ public protocol LuminaWindow: Sendable, ~Copyable {
     /// - Windows: Handle in WM_GETMINMAXINFO message
     ///
     /// - Parameter size: Minimum logical size, or nil to remove constraint
-    mutating func setMinSize(_ size: LogicalSize?)
+    func setMinSize(_ size: LogicalSize?)
 
     /// Set maximum window size constraint.
     ///
@@ -121,7 +121,7 @@ public protocol LuminaWindow: Sendable, ~Copyable {
     /// - Windows: Handle in WM_GETMINMAXINFO message
     ///
     /// - Parameter size: Maximum logical size, or nil to remove constraint
-    mutating func setMaxSize(_ size: LogicalSize?)
+    func setMaxSize(_ size: LogicalSize?)
 
     /// Request keyboard focus for this window.
     ///
@@ -131,7 +131,7 @@ public protocol LuminaWindow: Sendable, ~Copyable {
     /// - macOS: Use makeKeyAndOrderFront
     /// - Windows: Use SetForegroundWindow
     /// - Should generate focused/unfocused events
-    mutating func requestFocus()
+    func requestFocus()
 
     /// Get the current scale factor (DPI) for this window.
     ///
@@ -174,7 +174,7 @@ public protocol LuminaWindow: Sendable, ~Copyable {
     ///     render(windowID)
     /// }
     /// ```
-    mutating func requestRedraw()
+    func requestRedraw()
 
     /// Toggle window decorations (title bar, borders, close button).
     ///
@@ -201,7 +201,7 @@ public protocol LuminaWindow: Sendable, ~Copyable {
     ///     try window.setDecorated(false)  // Borderless window
     /// }
     /// ```
-    mutating func setDecorated(_ decorated: Bool) throws
+    func setDecorated(_ decorated: Bool) throws
 
     /// Set window always-on-top behavior.
     ///
@@ -227,7 +227,7 @@ public protocol LuminaWindow: Sendable, ~Copyable {
     ///     try window.setAlwaysOnTop(true)  // Floating window
     /// }
     /// ```
-    mutating func setAlwaysOnTop(_ alwaysOnTop: Bool) throws
+    func setAlwaysOnTop(_ alwaysOnTop: Bool) throws
 
     /// Set window transparency (alpha channel support).
     ///
@@ -254,7 +254,7 @@ public protocol LuminaWindow: Sendable, ~Copyable {
     ///     // Now render with alpha channel
     /// }
     /// ```
-    mutating func setTransparent(_ transparent: Bool) throws
+    func setTransparent(_ transparent: Bool) throws
 
     /// Query window capabilities for this platform.
     ///

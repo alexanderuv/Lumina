@@ -76,7 +76,7 @@ struct WaylandDemo {
             title: "Wayland Demo - Native Wayland Window",
             size: LogicalSize(width: 800, height: 600),
             resizable: true,
-            monitor: nil as Monitor?
+            monitor: nil
         )
         print("[DEMO] Window createWindow() returned")
 

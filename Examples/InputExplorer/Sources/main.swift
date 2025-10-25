@@ -1,9 +1,9 @@
 import Lumina
 import Foundation
 
-/// InputExplorer - Demonstrates event handling in Milestone 0
+/// InputExplorer - Demonstrates event handling
 ///
-/// This example shows all the event types supported in M0:
+/// This example shows all supported event types:
 /// - Window events (closed, resized, moved, focus, scale factor)
 /// - Pointer events (motion, button press/release, scroll, enter/leave)
 /// - Keyboard events (key down/up, modifiers, text input)
@@ -17,16 +17,16 @@ struct InputExplorer {
         var app = try platform.createApp()
 
         var window = try app.createWindow(
-            title: "Input Explorer - All M0 Events",
+            title: "Input Explorer - Events",
             size: LogicalSize(width: 600, height: 400),
             resizable: true,
-            monitor: nil as Monitor?
+            monitor: nil
         )
 
         window.show()
 
-        print("=== Input Explorer - Milestone 0 Events ===\n")
-        print("This example demonstrates ALL events supported in M0:")
+        print("=== Input Explorer ===\n")
+        print("This example demonstrates all supported events:")
         print("  • Window: close, resize, move, focus, scale factor")
         print("  • Pointer: motion, buttons, scroll, enter/leave")
         print("  • Keyboard: key down/up, modifiers, text input")
@@ -116,7 +116,7 @@ struct InputExplorer {
                 case .user(let userEvent):
                     print("[\(eventCount)] User event: \(userEvent.data)")
 
-                // M1 Events (not actively demonstrated in this example)
+                // Other events (not actively demonstrated in this example)
                 case .redraw:
                     print("[\(eventCount)] Redraw event")
                     break

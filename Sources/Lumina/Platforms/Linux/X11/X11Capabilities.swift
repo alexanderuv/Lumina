@@ -206,8 +206,8 @@ public struct X11Capabilities: Sendable {
     public func clipboardCapabilities() -> ClipboardCapabilities {
         return ClipboardCapabilities(
             supportsText: true,
-            supportsImages: false,  // Not implemented in Milestone 1
-            supportsHTML: false     // Not implemented in Milestone 1
+            supportsImages: false,  // Not implemented yet
+            supportsHTML: false     // Not implemented yet
         )
     }
 

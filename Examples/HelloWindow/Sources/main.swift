@@ -15,7 +15,7 @@ struct HelloWindow {
             title: "Hello, Lumina!",
             size: LogicalSize(width: 1000, height: 500),
             resizable: true,
-            monitor: nil as Monitor?
+            monitor: nil
         )
 
         window.show()
