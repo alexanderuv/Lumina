@@ -161,13 +161,13 @@ final class LibdecorDecorations: DecorationStrategy {
         }
 
         // Create libdecor interface
-        let logger = self.logger
+        // Note: C function pointers cannot capture context, so we use print instead of logger
         let iface = lumina_alloc_libdecor_interface { ctx, error, message in
             let errorStr = error == LIBDECOR_ERROR_COMPOSITOR_INCOMPATIBLE
                 ? "compositor incompatible"
                 : "invalid frame configuration"
             let msg = message.map { String(cString: $0) } ?? "unknown"
-            logger.error("libdecor error: \(errorStr) - \(msg)")
+            print("[Lumina] libdecor error: \(errorStr) - \(msg)")
         }
 
         guard let iface = iface else {
