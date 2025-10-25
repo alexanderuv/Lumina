@@ -78,7 +78,7 @@ final class WaylandInputState {
         var pointerEnterSerial: UInt32 = 0  // Serial from last pointer enter event (for cursor)
         var hasPendingMotion = false
 
-        // Main content surface tracking (like GLFW's approach)
+        // Main content surface tracking for proper input event filtering
         // Maps WindowID -> main content surface pointer
         var windowMainSurfaces: [WindowID: OpaquePointer] = [:]
         // True if pointer is currently over the main content surface (not decorations)
@@ -193,7 +193,7 @@ final class WaylandInputState {
         let surfaceID = UInt(bitPattern: surface)
         state.surfaceToWindowID[surfaceID] = windowID
 
-        // Track main content surface for proper input event filtering (like GLFW)
+        // Track main content surface for proper input event filtering
         if isMainSurface {
             state.windowMainSurfaces[windowID] = surface
         }
@@ -301,7 +301,7 @@ final class WaylandInputState {
         self.application = app
     }
 
-    /// Restore the current cursor on pointer enter (matches GLFW behavior)
+    /// Restore the current cursor on pointer enter
     ///
     /// SAFETY: nonisolated because called from C callbacks that run synchronously
     /// on main thread during wl_display_dispatch().
@@ -361,7 +361,7 @@ final class WaylandInputState {
 
     /// Get cursor name for decoration area
     ///
-    /// Uses XDG cursor naming convention (same as GLFW).
+    /// Uses XDG cursor naming convention.
     nonisolated fileprivate func cursorNameForDecorationArea(_ area: DecorationArea) -> String {
         switch area {
         case .titleBar:
@@ -402,8 +402,8 @@ final class WaylandInputState {
 
         let cursorLoader = app.cursorLoader
 
-        // Determine which theme to use based on buffer scale (default to 1 for global cursor)
-        let theme = appCursorState.themeHiDPI ?? appCursorState.theme
+        // Use regular cursor theme (standard 24px size)
+        let theme = appCursorState.theme
 
         guard let theme = theme,
               let getCursor = cursorLoader.wl_cursor_theme_get_cursor,
@@ -440,11 +440,13 @@ final class WaylandInputState {
             .pointee
 
         // Apply cursor to surface
-        let hotspotX = Int32(image.hotspot_x)
-        let hotspotY = Int32(image.hotspot_y)
+        let scale: Int32 = 1
+        let hotspotX = Int32(image.hotspot_x) / scale
+        let hotspotY = Int32(image.hotspot_y) / scale
 
+        wl_surface_set_buffer_scale(cursorSurface, scale)
         wl_surface_attach(cursorSurface, buffer, 0, 0)
-        wl_surface_damage(cursorSurface, 0, 0, Int32.max, Int32.max)
+        wl_surface_damage(cursorSurface, 0, 0, Int32(image.width), Int32(image.height))
         wl_surface_commit(cursorSurface)
 
         // Set cursor on pointer (use serial from last enter event)
@@ -599,7 +601,7 @@ private func pointerEnterCallback(
     } else {
         // Check if this is a surface we own (main window surface)
         if let windowID = inputState.windowID(for: surface) {
-            // Check if this is the main content surface (like GLFW does)
+            // Check if this is the main content surface
             let isMainSurface = inputState.state.windowMainSurfaces[windowID] == surface
 
             // Entering window surface
@@ -609,8 +611,11 @@ private func pointerEnterCallback(
 
             // Only send entered event for main surface
             if isMainSurface {
-                // DON'T restore cursor automatically - let libdecor/compositor handle it
-                // (SSD mode: compositor sets resize cursors on main surface edges)
+                // Set default cursor when entering main surface
+                // This is required for proper cursor display in Wayland
+                if let app = inputState.application {
+                    inputState.applyCursor("left_ptr", app: app)
+                }
 
                 let position = LogicalPosition(x: inputState.state.pointerX, y: inputState.state.pointerY)
                 inputState.enqueueEvent(.pointer(.entered(windowID, position: position)))
@@ -698,7 +703,7 @@ private func pointerButtonCallback(
         return  // Don't send button events for decoration surfaces
     }
 
-    // Only send button events if we're on the main content surface (like GLFW)
+    // Only send button events if we're on the main content surface
     // This filters out button events from libdecor-created subsurfaces
     if !inputState.state.pointerOnMainSurface {
         return
@@ -758,7 +763,7 @@ private func pointerAxisCallback(
 
     guard let windowID = inputState.state.pointerWindowID else { return }
 
-    // Only send scroll events if we're on the main surface (like GLFW)
+    // Only send scroll events if we're on the main surface
     guard inputState.state.pointerOnMainSurface else { return }
 
     // Convert fixed-point to float (Wayland uses 1/256 of a pixel per unit)
@@ -786,7 +791,7 @@ private func pointerFrameCallback(
 
     let inputState = Unmanaged<WaylandInputState>.fromOpaque(data).takeUnretainedValue()
 
-    // Deliver coalesced motion event (only for main surface, like GLFW)
+    // Deliver coalesced motion event (only for main surface)
     if inputState.state.hasPendingMotion,
        let windowID = inputState.state.pointerWindowID,
        inputState.state.pointerOnMainSurface {

@@ -113,13 +113,9 @@ public final class WaylandMonitorTracker: @unchecked Sendable {
     }
 
     deinit {
-        outputsLock.lock()
-        defer { outputsLock.unlock() }
-
-        // Clean up wl_output proxies
-        for (_, outputInfo) in _outputs {
-            wl_output_destroy(outputInfo.output)
-        }
+        // NOTE: We don't manually destroy wl_output proxies here because
+        // wl_display_disconnect() automatically destroys all proxies.
+        // Attempting to destroy them manually causes a double-free crash.
     }
 
     // MARK: - Registry Binding

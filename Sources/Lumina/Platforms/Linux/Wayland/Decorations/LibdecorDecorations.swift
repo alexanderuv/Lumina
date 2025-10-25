@@ -161,12 +161,13 @@ final class LibdecorDecorations: DecorationStrategy {
         }
 
         // Create libdecor interface
+        let logger = self.logger
         let iface = lumina_alloc_libdecor_interface { ctx, error, message in
             let errorStr = error == LIBDECOR_ERROR_COMPOSITOR_INCOMPATIBLE
                 ? "compositor incompatible"
                 : "invalid frame configuration"
             let msg = message.map { String(cString: $0) } ?? "unknown"
-            print("Lumina: libdecor error: \(errorStr) - \(msg)")
+            logger.error("libdecor error: \(errorStr) - \(msg)")
         }
 
         guard let iface = iface else {
@@ -182,7 +183,6 @@ final class LibdecorDecorations: DecorationStrategy {
         }
 
         context = ctx
-        logger.debug("Created libdecor context")
     }
 
     private func createLibdecorFrame() throws {

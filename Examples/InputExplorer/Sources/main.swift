@@ -48,7 +48,7 @@ struct InputExplorer {
                 case .window(let windowEvent):
                     switch windowEvent {
                     case .closed(let id):
-                        print("[\(eventCount)] Window closed: \(id)")
+                        print("[\(eventCount)] ✓✓✓ Window closed: \(id) - SETTING RUNNING=FALSE")
                         running = false
 
                     case .resized(let id, let size):

@@ -101,8 +101,6 @@ final class ClientSideDecorations: DecorationStrategy {
             if let surf = rightSurface { inputState.registerDecorationSurface(surf, windowID: window.id, area: .rightBorder) }
             if let surf = bottomSurface { inputState.registerDecorationSurface(surf, windowID: window.id, area: .bottomBorder) }
         }
-
-        logger.debug("Created client-side decorations")
     }
 
     func setTitle(_ title: String) {
@@ -175,8 +173,6 @@ final class ClientSideDecorations: DecorationStrategy {
         leftSubsurface = nil
         rightSubsurface = nil
         bottomSubsurface = nil
-
-        logger.debug("Destroyed client-side decorations")
     }
 
     // MARK: - Helper Methods

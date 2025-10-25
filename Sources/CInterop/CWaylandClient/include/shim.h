@@ -146,19 +146,12 @@ static inline struct libdecor_frame_interface* lumina_alloc_frame_interface(
     void (*close)(struct libdecor_frame*, void*),
     void (*commit)(struct libdecor_frame*, void*)
 ) {
-    fprintf(stderr, "[C Helper] ENTRY: lumina_alloc_frame_interface called\n");
-    fflush(stderr);
     struct libdecor_frame_interface *iface = calloc(1, sizeof(struct libdecor_frame_interface));
     if (iface) {
         iface->configure = configure;
         iface->close = close;
         iface->commit = commit;
         iface->dismiss_popup = NULL;
-        printf("[C Helper] Allocated frame interface at %p\n", iface);
-        printf("[C Helper]   configure = %p\n", iface->configure);
-        printf("[C Helper]   close = %p\n", iface->close);
-        printf("[C Helper]   commit = %p\n", iface->commit);
-        fflush(stdout);
     }
     return iface;
 }

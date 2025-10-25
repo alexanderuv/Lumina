@@ -212,10 +212,11 @@ public final class WaylandApplication: LuminaApp {
             return
         }
 
+        let logger = self.logger
         guard let decorInterface = lumina_alloc_libdecor_interface({ _, error, message in
             let errorStr = error == LIBDECOR_ERROR_COMPOSITOR_INCOMPATIBLE ? "compositor incompatible" : "invalid configuration"
             let msg = message.map { String(cString: $0) } ?? "unknown"
-            print("Lumina: libdecor error: \(errorStr) - \(msg)")
+            logger.error("libdecor error: \(errorStr) - \(msg)")
         }) else {
             logger.error("Failed to allocate libdecor interface")
             return
@@ -349,10 +350,20 @@ public final class WaylandApplication: LuminaApp {
             try completeInitialization()
         }
 
-        _ = pumpEvents(mode: .wait)
+        // If an event was returned, put it back at the front of the queue
+        // so the next poll() call will return it
+        if let event = pumpEvents(mode: .wait) {
+            eventQueue.insert(event, at: 0)
+        }
     }
 
     public func pumpEvents(mode: ControlFlowMode) -> Event? {
+        // CRITICAL: Always return queued events FIRST before processing new ones
+        // This ensures events are delivered in FIFO order
+        if !eventQueue.isEmpty {
+            return eventQueue.removeFirst()
+        }
+
         let display = platform.displayConnection
 
         // libdecor integration requires:
@@ -472,9 +483,7 @@ public final class WaylandApplication: LuminaApp {
 
         // 5. Process user events from background threads
         let userEvents = userEventQueue.removeAll()
-        for userEvent in userEvents {
-            eventQueue.append(.user(userEvent))
-        }
+        eventQueue.append(contentsOf: userEvents.map { .user($0) })
 
         // 6. Return next queued event
         return eventQueue.isEmpty ? nil : eventQueue.removeFirst()
@@ -1047,6 +1056,12 @@ func waylandFrameConfigureCallback(
         wl_surface_commit(surface)
     }
 
+    // Notify window of resize (enqueues event)
+    if let windowPtr = userDataPtr.pointee.window_ptr {
+        let window = Unmanaged<WaylandWindow>.fromOpaque(windowPtr).takeUnretainedValue()
+        window.handleResize(width: width, height: height)
+    }
+
     // Mark as configured
     userDataPtr.pointee.configured = true
 }
@@ -1059,8 +1074,15 @@ func waylandFrameCloseCallback(
     _ frame: OpaquePointer?,
     _ userData: UnsafeMutableRawPointer?
 ) {
-    // TODO: Post Event.window(.closeRequested(windowID)) to application event queue
-    exit(0)
+    guard let userData = userData else { return }
+
+    let userDataPtr = userData.assumingMemoryBound(to: LuminaWindowUserData.self)
+
+    // Notify window of close request (enqueues event)
+    if let windowPtr = userDataPtr.pointee.window_ptr {
+        let window = Unmanaged<WaylandWindow>.fromOpaque(windowPtr).takeUnretainedValue()
+        window.handleCloseRequest()
+    }
 }
 
 /// Handle commit request from libdecor (C callback)

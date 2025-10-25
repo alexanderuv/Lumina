@@ -17,14 +17,26 @@ This example shows how to force the Wayland backend instead of relying on automa
 - Linux operating system
 - Swift 6.2 or later (6.1+ minimum for traits)
 - Wayland development libraries installed:
-  - Debian/Ubuntu: `sudo apt install libwayland-dev libxkbcommon-dev`
-  - Fedora/RHEL: `sudo dnf install wayland-devel libxkbcommon-devel`
+  - Debian/Ubuntu: `sudo apt install libwayland-dev libxkbcommon-dev wayland-protocols`
+  - Fedora/RHEL: `sudo dnf install wayland-devel wayland-protocols-devel libxkbcommon-devel`
 
 ### Runtime Requirements
 - A running Wayland compositor (GNOME Wayland, KDE Plasma Wayland, Sway, etc.)
 - `WAYLAND_DISPLAY` environment variable set (automatically set when running under Wayland)
 
 ## Setup
+
+### Generate Wayland Protocol Bindings
+
+The first time you build, Wayland protocol bindings need to be generated from XML files. This happens automatically when using the build script, or you can generate them manually:
+
+```bash
+# From the root Lumina directory
+swift package plugin generate-wayland-protocols
+
+# Or from any Example app directory
+swift package --package-path ../.. plugin generate-wayland-protocols
+```
 
 ### Build the example
 
@@ -36,11 +48,15 @@ cd Examples/WaylandDemo
 ./build-wayland.sh
 ```
 
+The build script automatically checks for protocol files and generates them if needed.
+
 ### Option 2: Manual build
 ```bash
 cd Examples/WaylandDemo
 swift build --traits Wayland
 ```
+
+Note: If protocol files don't exist, you'll need to generate them first (see above).
 
 ## Running
 

@@ -262,6 +262,16 @@ public final class WaylandWindow: LuminaWindow {
                 }
             }
 
+            // CRITICAL: Commit initial frame state (this triggers the first configure event!)
+            // This must be done BEFORE map to ensure proper initialization
+            if let stateNew = loader.libdecor_state_new,
+               let stateFree = loader.libdecor_state_free,
+               let frameCommit = loader.libdecor_frame_commit,
+               let state = stateNew(Int32(currentSize.width), Int32(currentSize.height)) {
+                frameCommit(frame, state, nil)
+                stateFree(state)
+            }
+
             if let frameMap = loader.libdecor_frame_map {
                 frameMap(frame)
             }
@@ -437,8 +447,6 @@ public final class WaylandWindow: LuminaWindow {
         // Apply buffer scale to surface (tells compositor what scale the buffer uses)
         wl_surface_set_buffer_scale(surface, maxScale)
 
-        logger.debug("Scale changed: \(oldScale) -> \(maxScale)")
-
         // Emit scale change event to application
         if let inputState = inputState {
             inputState.enqueueEvent(.window(.scaleFactorChanged(
@@ -524,7 +532,14 @@ public final class WaylandWindow: LuminaWindow {
 
     /// Handle window resize from decoration strategy
     nonisolated internal func handleResize(width: Int32, height: Int32) {
-        currentSize = LogicalSize(width: Float(width), height: Float(height))
+        let newSize = LogicalSize(width: Float(width), height: Float(height))
+
+        // Only process if size actually changed
+        if newSize == currentSize {
+            return
+        }
+
+        currentSize = newSize
 
         if let eglWindow = eglWindow {
             wl_egl_window_resize(eglWindow, width, height, 0, 0)
@@ -534,13 +549,17 @@ public final class WaylandWindow: LuminaWindow {
             userDataPtr.pointee.current_width = Float(width)
             userDataPtr.pointee.current_height = Float(height)
         }
+
+        // Enqueue resize event for application
+        inputState?.enqueueEvent(.window(.resized(id, newSize)))
     }
 
     /// Handle close request from decoration strategy
     nonisolated internal func handleCloseRequest() {
-        // Post window close event
-        // This would be handled by the application event loop
         logger.info("Close requested for window \(id)")
+
+        // Enqueue close event for application
+        inputState?.enqueueEvent(.window(.closed(id)))
     }
 }
 
@@ -596,8 +615,6 @@ private func surfaceHandleEnter(
     // Add to tracked outputs
     window.outputScales.append(WaylandWindow.OutputScale(output: output, scale: outputScale))
 
-    window.logger.debug("Surface entered output (scale=\(outputScale)), total outputs: \(window.outputScales.count)")
-
     // Recalculate buffer scale
     window.updateBufferScaleFromOutputs()
 }
@@ -629,8 +646,6 @@ private func surfaceHandleLeave(
     // Remove this output from tracked outputs
     window.outputScales.removeAll { $0.output == output }
 
-    window.logger.debug("Surface left output, remaining outputs: \(window.outputScales.count)")
-
     // Recalculate buffer scale
     window.updateBufferScaleFromOutputs()
 }
@@ -656,8 +671,6 @@ private func surfaceHandlePreferredBufferScale(
     }
 
     let window = Unmanaged<WaylandWindow>.fromOpaque(windowPtr).takeUnretainedValue()
-
-    window.logger.debug("Compositor preferred buffer scale: \(scale)")
 
     // If compositor supports this event (protocol v6+), prefer it over calculated scale
     // Only update if scale actually changed
@@ -818,7 +831,7 @@ private struct WaylandCursor: LuminaCursor {
 
         // Load cursor from theme
         guard let wlCursorPtr = cursorName.withCString({ getCursor(theme, $0) }) else {
-            print("Lumina: Failed to load cursor: \(cursorName)")
+            // Cursor not found, silently fall back to default
             return
         }
 
@@ -832,13 +845,11 @@ private struct WaylandCursor: LuminaCursor {
         guard imageCount > 0,
               let imagesPtr = wlCursor.images,
               let imagePtr = imagesPtr[0] else {
-            print("Lumina: Cursor has no images: \(cursorName)")
             return
         }
 
         // Get buffer for cursor image
         guard let buffer = getBuffer(imagePtr) else {
-            print("Lumina: Failed to get buffer for cursor: \(cursorName)")
             return
         }
 

@@ -85,9 +85,9 @@ enum PluginError: Error, CustomStringConvertible {
         case .waylandScannerNotFound:
             return """
             Error: wayland-scanner not found in standard locations
-            Please install wayland-protocols package:
+            Please install required packages:
               Ubuntu/Debian: sudo apt install wayland-protocols
-              Fedora: sudo dnf install wayland-protocols-devel
+              Fedora: sudo dnf install wayland-devel wayland-protocols-devel
             """
         case .headerGenerationFailed(let name):
             return "Failed to generate header for \(name)"
