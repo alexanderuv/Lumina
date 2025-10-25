@@ -48,8 +48,3 @@ docs/.build/
 *.log
 .env
 .env.local
-
-# Generated Wayland protocol bindings
-# Regenerate with: swift package plugin generate-wayland-protocols
-Sources/CInterop/CWaylandClient/*-client-protocol.c
-Sources/CInterop/CWaylandClient/include/*-client-protocol.h
