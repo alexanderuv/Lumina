@@ -18,43 +18,36 @@ private final class MacAppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-/// Thread-safe user event queue
-private final class UserEventQueue: @unchecked Sendable {
+/// Thread-safe unified event queue (FIFO)
+internal final class EventQueue: @unchecked Sendable {
     private let lock = NSLock()
-    private var events: [UserEvent] = []
+    private var events: [Event] = []
 
-    func append(_ event: UserEvent) {
+    func append(_ event: Event) {
         lock.lock()
         defer { lock.unlock() }
         events.append(event)
     }
 
-    func removeAll() -> [UserEvent] {
+    func appendAll(_ newEvents: [Event]) {
         lock.lock()
         defer { lock.unlock() }
-        let allEvents = events
-        events.removeAll()
-        return allEvents
-    }
-}
-
-/// Thread-safe window event queue
-internal final class WindowEventQueue: @unchecked Sendable {
-    private let lock = NSLock()
-    private var events: [WindowEvent] = []
-
-    func append(_ event: WindowEvent) {
-        lock.lock()
-        defer { lock.unlock() }
-        events.append(event)
+        events.append(contentsOf: newEvents)
     }
 
-    func removeAll() -> [WindowEvent] {
+    func removeFirst() -> Event? {
         lock.lock()
         defer { lock.unlock() }
-        let allEvents = events
-        events.removeAll()
-        return allEvents
+        guard !events.isEmpty else {
+            return nil
+        }
+        return events.removeFirst()
+    }
+
+    func isEmpty() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return events.isEmpty
     }
 }
 
@@ -68,8 +61,7 @@ internal final class WindowEventQueue: @unchecked Sendable {
 public final class MacApplication: LuminaApp {
     public typealias Window = MacWindow
     private var shouldQuit: Bool = false
-    private let userEventQueue = UserEventQueue()
-    private let windowEventQueue = WindowEventQueue()
+    private let eventQueue = EventQueue()
     private var windowRegistry = WindowRegistry<Int>()  // NSWindow.windowNumber -> WindowID
     private var onWindowClosed: WindowCloseCallback?
     private let appDelegate: MacAppDelegate
@@ -172,16 +164,18 @@ public final class MacApplication: LuminaApp {
 
             // Send event to NSApp for standard processing
             NSApp.sendEvent(nsEvent)
-
-            // Process any pending user events
-            processUserEvents()
         }
 
         logger.info("Event loop exited")
     }
 
     public func poll() throws -> Event? {
-        // Loop until we find a translatable event or run out of events
+        // Check unified event queue first (FIFO)
+        if let event = eventQueue.removeFirst() {
+            return event
+        }
+
+        // No queued events, poll for new OS events
         while true {
             // Check for pending NSEvents (non-blocking)
             guard let nsEvent = NSApp.nextEvent(
@@ -190,22 +184,24 @@ public final class MacApplication: LuminaApp {
                 inMode: .default,
                 dequeue: true
             ) else {
-                // No NSEvents available, check for window events first, then user events
-                if let windowEvent = pollWindowEvent() {
-                    return windowEvent
-                }
-                return pollUserEvent()
+                // No OS events available
+                return nil
             }
 
             // Send event to NSApp for standard processing (window management, etc.)
             NSApp.sendEvent(nsEvent)
 
-            // Try to translate to Lumina event if it's associated with a tracked window
+            // Try to translate to Lumina events if associated with a tracked window
             if let windowNumber = nsEvent.window?.windowNumber,
                let windowID = windowRegistry.windowID(for: windowNumber) {
-                if let event = translateNSEvent(nsEvent, for: windowID) {
-                    // Handle mouse focus: generate enter on first movement,
-                    // respect exit but filter spurious ones
+                let events = translateNSEvent(nsEvent, for: windowID)
+                guard !events.isEmpty else {
+                    continue
+                }
+
+                // Handle special pointer tracking logic
+                var eventsToQueue: [Event] = []
+                for event in events {
                     if case .pointer(let pointerEvent) = event {
                         switch pointerEvent {
                         case .moved(let id, let position):
@@ -214,26 +210,35 @@ public final class MacApplication: LuminaApp {
                             if !wasInside {
                                 pointerInsideWindow[id] = true
                                 logger.debug("Pointer entered window: id = \(id)")
-                                return .pointer(.entered(id, position: position))
+                                eventsToQueue.append(.pointer(.entered(id, position: position)))
                             }
+                            eventsToQueue.append(event)
                         case .entered(_, _):
-                            // Ignore enter events - generate from move instead
+                            // Ignore enter events - we generate them from move
                             continue
                         case .left(let id, _):
                             // Respect exit events, but only if we were inside
                             if pointerInsideWindow[id] == true {
                                 pointerInsideWindow[id] = false
                                 logger.debug("Pointer left window: id = \(id)")
-                            } else {
-                                // Skip spurious exit
-                                continue
+                                eventsToQueue.append(event)
                             }
+                            // Skip spurious exits
                         default:
-                            break
+                            eventsToQueue.append(event)
                         }
+                    } else {
+                        eventsToQueue.append(event)
                     }
-                    return event
                 }
+
+                // Queue all events and return the first one
+                guard !eventsToQueue.isEmpty else {
+                    continue
+                }
+
+                eventQueue.appendAll(eventsToQueue)
+                return eventQueue.removeFirst()
             }
 
             // Event processed but not translatable (e.g., menu events, system events)
@@ -241,47 +246,25 @@ public final class MacApplication: LuminaApp {
         }
     }
 
-    /// Poll for a single window event from the queue.
-    private func pollWindowEvent() -> Event? {
-        let pendingEvents = windowEventQueue.removeAll()
-        guard let windowEvent = pendingEvents.first else {
-            return nil
-        }
-
-        // Re-queue remaining events
-        for event in pendingEvents.dropFirst() {
-            windowEventQueue.append(event)
-        }
-
-        return .window(windowEvent)
-    }
-
-    /// Poll for a single user event from the queue.
-    private func pollUserEvent() -> Event? {
-        let pendingEvents = userEventQueue.removeAll()
-        guard let userEvent = pendingEvents.first else {
-            return nil
-        }
-
-        // Re-queue remaining events
-        for event in pendingEvents.dropFirst() {
-            userEventQueue.append(event)
-        }
-
-        return .user(userEvent)
-    }
-
     public func wait() throws {
         // Use CFRunLoop for low-power wait
         // This will block until an event arrives, then return without processing it
         CFRunLoopRunInMode(CFRunLoopMode.defaultMode, .infinity, true)
-
-        // After waking up, process user events
-        processUserEvents()
     }
 
     public func pumpEvents(mode: ControlFlowMode) -> Event? {
         logger.debug("pumpEvents: mode = \(mode)")
+
+        // Check unified event queue first (FIFO)
+        if let event = eventQueue.removeFirst() {
+            return event
+        }
+
+        // Check for redraw requests (priority handling after queued events)
+        if let windowID = redrawRequests.first {
+            redrawRequests.remove(windowID)
+            return .redraw(.requested(windowID, dirtyRect: nil))
+        }
 
         // Determine timeout based on control flow mode
         let timeout: Date = switch mode {
@@ -293,12 +276,6 @@ public final class MacApplication: LuminaApp {
             deadline.internalDate
         }
 
-        // Check for redraw requests first (priority handling)
-        if let windowID = redrawRequests.first {
-            redrawRequests.remove(windowID)
-            return .redraw(.requested(windowID, dirtyRect: nil))
-        }
-
         // Process platform events with timeout
         while let nsEvent = NSApp.nextEvent(
             matching: .any,
@@ -308,12 +285,17 @@ public final class MacApplication: LuminaApp {
         ) {
             NSApp.sendEvent(nsEvent)
 
-            // Try to translate to Lumina event
+            // Try to translate to Lumina events
             if let windowNumber = nsEvent.window?.windowNumber,
                let windowID = windowRegistry.windowID(for: windowNumber) {
-                if let event = translateNSEvent(nsEvent, for: windowID) {
-                    // Handle mouse focus: generate enter on first movement,
-                    // respect exit but filter spurious ones
+                let events = translateNSEvent(nsEvent, for: windowID)
+                guard !events.isEmpty else {
+                    continue
+                }
+
+                // Handle special pointer tracking logic
+                var eventsToQueue: [Event] = []
+                for event in events {
                     if case .pointer(let pointerEvent) = event {
                         switch pointerEvent {
                         case .moved(let id, let position):
@@ -322,26 +304,35 @@ public final class MacApplication: LuminaApp {
                             if !wasInside {
                                 pointerInsideWindow[id] = true
                                 logger.debug("Pointer entered window: id = \(id)")
-                                return .pointer(.entered(id, position: position))
+                                eventsToQueue.append(.pointer(.entered(id, position: position)))
                             }
+                            eventsToQueue.append(event)
                         case .entered(_, _):
-                            // Ignore enter events - generate from move instead
+                            // Ignore enter events - we generate them from move
                             continue
                         case .left(let id, _):
                             // Respect exit events, but only if we were inside
                             if pointerInsideWindow[id] == true {
                                 pointerInsideWindow[id] = false
                                 logger.debug("Pointer left window: id = \(id)")
-                            } else {
-                                // Skip spurious exit
-                                continue
+                                eventsToQueue.append(event)
                             }
+                            // Skip spurious exits
                         default:
-                            break
+                            eventsToQueue.append(event)
                         }
+                    } else {
+                        eventsToQueue.append(event)
                     }
-                    return event
                 }
+
+                // Queue all events and return the first one
+                guard !eventsToQueue.isEmpty else {
+                    continue
+                }
+
+                eventQueue.appendAll(eventsToQueue)
+                return eventQueue.removeFirst()
             }
 
             // In poll mode, don't block waiting for more events
@@ -350,13 +341,8 @@ public final class MacApplication: LuminaApp {
             }
         }
 
-        // Check for window events
-        if let windowEvent = pollWindowEvent() {
-            return windowEvent
-        }
-
-        // Check for user events
-        return pollUserEvent()
+        // No events available
+        return nil
     }
 
     /// Mark a window as needing redraw
@@ -404,8 +390,8 @@ public final class MacApplication: LuminaApp {
     }
 
     public func postUserEvent(_ event: UserEvent) {
-        // Thread-safe enqueue
-        userEventQueue.append(event)
+        // Thread-safe enqueue to unified event queue
+        eventQueue.append(.user(event))
 
         // Wake up the event loop by posting a dummy NSEvent
         // This ensures wait() wakes up when a user event is posted
@@ -437,8 +423,8 @@ public final class MacApplication: LuminaApp {
     ) throws -> MacWindow {
         logger.info("Creating window: title = '\(title)', size = \(size), resizable = \(resizable)")
 
-        // Capture windowEventQueue for posting close events
-        let eventQueue = windowEventQueue
+        // Capture unified eventQueue for posting window events
+        let capturedEventQueue = eventQueue
         let windowLogger = logger
 
         // Create the window using MacWindow
@@ -450,8 +436,8 @@ public final class MacApplication: LuminaApp {
             closeCallback: { [onWindowClosed] windowID in
                 windowLogger.info("Window closed: id = \(windowID)")
 
-                // Post a window closed event so custom event loops can detect it
-                eventQueue.append(.closed(windowID))
+                // Post a window closed event to unified event queue
+                capturedEventQueue.append(.window(.closed(windowID)))
 
                 // Wake up the event loop
                 let dummyEvent = NSEvent.otherEvent(
@@ -472,7 +458,7 @@ public final class MacApplication: LuminaApp {
                 // Trigger the application's close callback
                 onWindowClosed?(windowID)
             },
-            eventQueue: eventQueue
+            eventQueue: capturedEventQueue
         )
 
         // Register the window
@@ -513,27 +499,6 @@ public final class MacApplication: LuminaApp {
     }
 
     // MARK: - Private Helpers
-
-    /// Process all pending user events from the thread-safe queue.
-    ///
-    /// - Returns: true if any user events were processed
-    @discardableResult
-    private func processUserEvents() -> Bool {
-        let pendingEvents = userEventQueue.removeAll()
-
-        guard !pendingEvents.isEmpty else {
-            return false
-        }
-
-        for userEvent in pendingEvents {
-            // In a full implementation, this would dispatch to registered handlers
-            // For now, we just ensure the event is dequeued
-            // The public API layer will handle event callbacks
-            _ = userEvent
-        }
-
-        return true
-    }
 }
 
 #endif

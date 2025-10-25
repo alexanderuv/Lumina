@@ -7,9 +7,9 @@ import Foundation
 private final class MacWindowDelegate: NSObject, NSWindowDelegate {
     private let windowID: WindowID
     private let closeCallback: WindowCloseCallback?
-    private let eventQueue: WindowEventQueue
+    private let eventQueue: EventQueue
 
-    init(windowID: WindowID, closeCallback: WindowCloseCallback?, eventQueue: WindowEventQueue) {
+    init(windowID: WindowID, closeCallback: WindowCloseCallback?, eventQueue: EventQueue) {
         self.windowID = windowID
         self.closeCallback = closeCallback
         self.eventQueue = eventQueue
@@ -30,7 +30,7 @@ private final class MacWindowDelegate: NSObject, NSWindowDelegate {
         guard let window = notification.object as? NSWindow else { return }
         let contentSize = window.contentRect(forFrameRect: window.frame).size
         let size = LogicalSize(width: Float(contentSize.width), height: Float(contentSize.height))
-        eventQueue.append(.resized(windowID, size))
+        eventQueue.append(.window(.resized(windowID, size)))
     }
 
     func windowDidMove(_ notification: Notification) {
@@ -45,15 +45,15 @@ private final class MacWindowDelegate: NSObject, NSWindowDelegate {
         let y = screenFrame.size.height - topLeftY
 
         let position = LogicalPosition(x: Float(x), y: Float(y))
-        eventQueue.append(.moved(windowID, position))
+        eventQueue.append(.window(.moved(windowID, position)))
     }
 
     func windowDidBecomeKey(_ notification: Notification) {
-        eventQueue.append(.focused(windowID))
+        eventQueue.append(.window(.focused(windowID)))
     }
 
     func windowDidResignKey(_ notification: Notification) {
-        eventQueue.append(.unfocused(windowID))
+        eventQueue.append(.window(.unfocused(windowID)))
     }
 
     func windowDidChangeBackingProperties(_ notification: Notification) {
@@ -66,7 +66,7 @@ private final class MacWindowDelegate: NSObject, NSWindowDelegate {
             let newScale = Float(window.backingScaleFactor)
 
             if oldScale != newScale {
-                eventQueue.append(.scaleFactorChanged(windowID, oldFactor: oldScale, newFactor: newScale))
+                eventQueue.append(.window(.scaleFactorChanged(windowID, oldFactor: oldScale, newFactor: newScale)))
             }
         }
     }
@@ -113,7 +113,7 @@ public final class MacWindow: LuminaWindow {
         resizable: Bool,
         monitor: Monitor? = nil,
         closeCallback: WindowCloseCallback? = nil,
-        eventQueue: WindowEventQueue
+        eventQueue: EventQueue
     ) throws -> MacWindow {
         // Create content rect for the window
         let contentRect = NSRect(

@@ -11,7 +11,7 @@ import Foundation
 
 // MARK: - Event Translation
 
-/// Translate an NSEvent to a Lumina Event.
+/// Translate an NSEvent to Lumina Events.
 ///
 /// This is the main entry point for converting platform-specific events
 /// to Lumina's unified event system.
@@ -19,48 +19,68 @@ import Foundation
 /// - Parameters:
 ///   - nsEvent: The AppKit event to translate
 ///   - windowID: The WindowID associated with this event
-/// - Returns: Lumina Event, or nil if the event should be ignored
+/// - Returns: Array of Lumina Events (can be empty, one, or multiple events)
 @MainActor
-internal func translateNSEvent(_ nsEvent: NSEvent, for windowID: WindowID) -> Event? {
+internal func translateNSEvent(_ nsEvent: NSEvent, for windowID: WindowID) -> [Event] {
     switch nsEvent.type {
     // Mouse events
     case .leftMouseDown:
-        return translateMouseDown(nsEvent, button: .left, windowID: windowID)
+        if let event = translateMouseDown(nsEvent, button: .left, windowID: windowID) {
+            return [event]
+        }
     case .leftMouseUp:
-        return translateMouseUp(nsEvent, button: .left, windowID: windowID)
+        if let event = translateMouseUp(nsEvent, button: .left, windowID: windowID) {
+            return [event]
+        }
     case .rightMouseDown:
-        return translateMouseDown(nsEvent, button: .right, windowID: windowID)
+        if let event = translateMouseDown(nsEvent, button: .right, windowID: windowID) {
+            return [event]
+        }
     case .rightMouseUp:
-        return translateMouseUp(nsEvent, button: .right, windowID: windowID)
+        if let event = translateMouseUp(nsEvent, button: .right, windowID: windowID) {
+            return [event]
+        }
     case .otherMouseDown:
-        return translateMouseDown(nsEvent, button: .middle, windowID: windowID)
+        if let event = translateMouseDown(nsEvent, button: .middle, windowID: windowID) {
+            return [event]
+        }
     case .otherMouseUp:
-        return translateMouseUp(nsEvent, button: .middle, windowID: windowID)
+        if let event = translateMouseUp(nsEvent, button: .middle, windowID: windowID) {
+            return [event]
+        }
     case .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:
-        return translateMouseMoved(nsEvent, windowID: windowID)
+        if let event = translateMouseMoved(nsEvent, windowID: windowID) {
+            return [event]
+        }
     case .scrollWheel:
-        return translateScrollWheel(nsEvent, windowID: windowID)
+        if let event = translateScrollWheel(nsEvent, windowID: windowID) {
+            return [event]
+        }
     case .mouseEntered:
         guard let position = translateMousePosition(nsEvent) else {
-            return nil
+            return []
         }
-        return .pointer(.entered(windowID, position: position))
+        return [.pointer(.entered(windowID, position: position))]
     case .mouseExited:
         guard let position = translateMousePosition(nsEvent) else {
-            return nil
+            return []
         }
-        return .pointer(.left(windowID, position: position))
+        return [.pointer(.left(windowID, position: position))]
 
     // Keyboard events
     case .keyDown:
         return translateKeyDown(nsEvent, windowID: windowID)
     case .keyUp:
-        return translateKeyUp(nsEvent, windowID: windowID)
+        if let event = translateKeyUp(nsEvent, windowID: windowID) {
+            return [event]
+        }
 
     // Ignore other event types for now
     default:
-        return nil
+        break
     }
+
+    return []
 }
 
 // MARK: - Mouse Event Translation
@@ -150,11 +170,21 @@ private func translateMousePosition(_ nsEvent: NSEvent) -> LogicalPosition? {
 private func translateKeyDown(
     _ nsEvent: NSEvent,
     windowID: WindowID
-) -> Event? {
+) -> [Event] {
     let keyCode = translateKeyCode(nsEvent)
     let modifiers = translateModifiers(nsEvent.modifierFlags)
 
-    return .keyboard(.keyDown(windowID, key: keyCode, modifiers: modifiers))
+    var events: [Event] = []
+
+    // Always generate keyDown event for physical key press
+    events.append(.keyboard(.keyDown(windowID, key: keyCode, modifiers: modifiers)))
+
+    // Also generate textInput event if this key produces text
+    if let textInputEvent = translateTextInput(nsEvent, windowID: windowID) {
+        events.append(textInputEvent)
+    }
+
+    return events
 }
 
 private func translateKeyUp(
