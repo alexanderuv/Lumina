@@ -42,12 +42,12 @@ struct WaylandDemo {
         #if LUMINA_WAYLAND
         print("[DEMO] LUMINA_WAYLAND is defined")
 
-        // NEW API: Initialize platform first
+        // Initialize platform first, forcing Wayland backend
         print("[DEMO] Initializing Wayland platform...")
-        var platform = try createLinuxPlatform(.wayland)
+        let platform = try createLuminaPlatform(.wayland)
         print("[DEMO] Platform created successfully")
 
-        // NEW: Monitor enumeration via platform (no app needed!)
+        // Monitor enumeration via platform (no app needed!)
         print("[DEMO] Enumerating monitors...")
         do {
             let monitors = try platform.enumerateMonitors()
@@ -66,7 +66,7 @@ struct WaylandDemo {
             print("[DEMO] ⚠️  Monitor enumeration failed: \(error)")
         }
 
-        // NEW: Create app from platform
+        // Create app from platform
         print("[DEMO] Creating application...")
         var app = try platform.createApp()
         print("[DEMO] App created successfully")

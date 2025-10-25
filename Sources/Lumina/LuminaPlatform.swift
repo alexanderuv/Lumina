@@ -129,20 +129,10 @@ public protocol LuminaPlatform: AnyObject {
 
 // MARK: - Platform Factory
 
-/// Create a new Lumina platform instance.
+#if os(macOS)
+/// Create a new Lumina platform instance for macOS.
 ///
-/// This factory method automatically selects the correct platform implementation
-/// based on the operating system and available display servers.
-///
-/// **Platform Selection:**
-/// - **macOS**: Returns MacPlatform (AppKit-based)
-/// - **Windows**: Returns WinPlatform (Win32-based)
-/// - **Linux**: Returns WaylandPlatform or X11Platform based on environment detection
-///
-/// On Linux, the platform is selected automatically:
-/// - If `WAYLAND_DISPLAY` is set: Try Wayland, fall back to X11 on failure
-/// - If `DISPLAY` is set: Use X11
-/// - If neither: Throw error (no display server detected)
+/// Returns a MacPlatform instance using AppKit.
 ///
 /// Example:
 /// ```swift
@@ -152,16 +142,109 @@ public protocol LuminaPlatform: AnyObject {
 /// ```
 ///
 /// - Throws: `LuminaError.platformError` if platform initialization fails
-/// - Returns: A new platform instance ready to enumerate monitors and create apps
+/// - Returns: A new macOS platform instance
 @MainActor
 public func createLuminaPlatform() throws -> any LuminaPlatform {
-    #if os(macOS)
     return try MacPlatform()
-    #elseif os(Windows)
-    return try WinPlatform()
-    #elseif os(Linux)
-    return try createLinuxPlatform(.auto)
-    #else
-    #error("Unsupported platform")
-    #endif
 }
+
+#elseif os(Windows)
+/// Create a new Lumina platform instance for Windows.
+///
+/// Returns a WinPlatform instance using Win32 APIs.
+///
+/// Example:
+/// ```swift
+/// let platform = try createLuminaPlatform()
+/// let monitors = try platform.enumerateMonitors()
+/// var app = try platform.createApp()
+/// ```
+///
+/// - Throws: `LuminaError.platformError` if platform initialization fails
+/// - Returns: A new Windows platform instance
+@MainActor
+public func createLuminaPlatform() throws -> any LuminaPlatform {
+    return try WinPlatform()
+}
+
+#elseif os(Linux)
+import Foundation
+
+/// Logger for Linux platform selection
+private let logger = LuminaLogger(label: "lumina.linux", level: .info)
+
+/// Create a new Lumina platform instance for Linux.
+///
+/// This factory method selects the appropriate Linux display server backend based on
+/// the backend parameter. Linux supports multiple display servers:
+///
+/// - **Wayland**: Modern protocol with better security and performance
+/// - **X11**: Traditional X Window System with broader compatibility
+/// - **auto**: Automatic selection based on environment variables
+///
+/// **Backend Selection Logic (auto mode):**
+/// 1. If `WAYLAND_DISPLAY` environment variable is set and Wayland support is compiled in:
+///    Try to initialize WaylandPlatform. If it fails, fall back to X11.
+/// 2. Otherwise: Use X11Platform
+///
+/// **Build Requirements:**
+/// - Wayland backend requires `--traits Wayland` build flag
+/// - X11 backend is always available on Linux
+///
+/// Example:
+/// ```swift
+/// // Automatic backend selection
+/// let platform = try createLuminaPlatform()
+///
+/// // Force Wayland backend
+/// let waylandPlatform = try createLuminaPlatform(.wayland)
+///
+/// // Force X11 backend
+/// let x11Platform = try createLuminaPlatform(.x11)
+/// ```
+///
+/// - Parameter backend: The display server backend to use (default: .auto)
+/// - Throws: `LuminaError.platformError` if platform initialization fails
+/// - Returns: A new Linux platform instance (WaylandPlatform or X11Platform)
+@MainActor
+public func createLuminaPlatform(_ backend: LinuxBackend = .auto) throws -> any LuminaPlatform {
+    switch backend {
+    #if LUMINA_WAYLAND
+    case .wayland:
+        return try WaylandPlatform()
+    #else
+    case .wayland:
+        throw LuminaError.platformError(
+            platform: "Linux",
+            operation: "Wayland backend selection",
+            code: -1,
+            message: "Wayland backend not compiled. Build with --traits Wayland"
+        )
+    #endif
+
+    case .x11:
+        return try X11Platform()
+
+    case .auto:
+        #if LUMINA_WAYLAND
+        // Try Wayland first if WAYLAND_DISPLAY is set
+        if ProcessInfo.processInfo.environment["WAYLAND_DISPLAY"] != nil {
+            do {
+                return try WaylandPlatform()
+            } catch {
+                // Wayland failed, fall back to X11
+                logger.error("Wayland initialization failed: \(error)")
+                logger.info("Falling back to X11")
+                return try X11Platform()
+            }
+        }
+        #endif
+
+        // Default to X11
+        return try X11Platform()
+    }
+}
+
+#else
+#error("Unsupported platform")
+#endif

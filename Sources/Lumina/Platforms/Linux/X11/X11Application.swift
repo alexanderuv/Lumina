@@ -361,12 +361,22 @@ final class X11Application: LuminaApp {
 
         case XCB_ENTER_NOTIFY:
             return xcbEvent.withMemoryRebound(to: xcb_enter_notify_event_t.self, capacity: 1) { ptr in
-                windowRegistry.windowID(for: ptr.pointee.event).map { .pointer(.entered($0)) }
+                guard let windowID = windowRegistry.windowID(for: ptr.pointee.event) else { return nil }
+                let position = LogicalPosition(
+                    x: Float(ptr.pointee.event_x),
+                    y: Float(ptr.pointee.event_y)
+                )
+                return .pointer(.entered(windowID, position: position))
             }
 
         case XCB_LEAVE_NOTIFY:
             return xcbEvent.withMemoryRebound(to: xcb_leave_notify_event_t.self, capacity: 1) { ptr in
-                windowRegistry.windowID(for: ptr.pointee.event).map { .pointer(.left($0)) }
+                guard let windowID = windowRegistry.windowID(for: ptr.pointee.event) else { return nil }
+                let position = LogicalPosition(
+                    x: Float(ptr.pointee.event_x),
+                    y: Float(ptr.pointee.event_y)
+                )
+                return .pointer(.left(windowID, position: position))
             }
 
         case XCB_FOCUS_IN:

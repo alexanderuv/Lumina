@@ -79,7 +79,7 @@ public final class WaylandApplication: LuminaApp {
     private nonisolated(unsafe) var registry: OpaquePointer?
 
     /// Input state management (accessed from C callbacks)
-    private nonisolated(unsafe) var inputState: WaylandInputState?
+    internal nonisolated(unsafe) var inputState: WaylandInputState?
 
     /// Libdecor loader for dynamic loading
     private let libdecorLoader = LibdecorLoader.shared
@@ -92,7 +92,8 @@ public final class WaylandApplication: LuminaApp {
     private var eventQueue: [Event] = []
     private let userEventQueue = UserEventQueue()
     private var windowRegistry = WindowRegistry<UnsafeRawPointer>()
-    private var windows: [WindowID: Any] = [:]
+    /// SAFETY: nonisolated(unsafe) because all access happens on the main thread
+    private nonisolated(unsafe) var windows: [WindowID: Any] = [:]
     private var shouldQuit = false
 
     public var exitOnLastWindowClosed: Bool = true
@@ -113,7 +114,9 @@ public final class WaylandApplication: LuminaApp {
     internal init(platform: WaylandPlatform) throws {
         self.platform = platform
         self.logger = LuminaLogger(label: "lumina.wayland", level: .info)
-        self.inputState = WaylandInputState()
+        let inputState = WaylandInputState()
+        self.inputState = inputState
+        inputState.setApplication(self)
     }
 
     deinit {
@@ -780,10 +783,21 @@ public final class WaylandApplication: LuminaApp {
         }
     }
 
+    // MARK: - Internal Window Access (for input handling)
+
+    /// Get a window by ID for input handling
+    /// SAFETY: nonisolated because this is accessed from C callbacks that run
+    /// synchronously on the main thread during wl_display_dispatch().
+    nonisolated internal func waylandWindow(for windowID: WindowID) -> WaylandWindow? {
+        return windows[windowID] as? WaylandWindow
+    }
+
     // MARK: - Internal Cursor Access (for WaylandCursor)
 
     /// Access cursor state for WaylandCursor operations (internal to Wayland platform)
-    internal var cursorState: (
+    /// SAFETY: nonisolated because this is accessed from C callbacks that run
+    /// synchronously on the main thread during wl_display_dispatch().
+    nonisolated internal var cursorState: (
         currentName: String?,
         hidden: Bool,
         surface: OpaquePointer?,

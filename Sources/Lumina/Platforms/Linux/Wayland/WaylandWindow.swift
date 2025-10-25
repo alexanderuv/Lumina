@@ -89,7 +89,8 @@ public final class WaylandWindow: LuminaWindow {
     fileprivate nonisolated(unsafe) weak var monitorTracker: WaylandMonitorTracker?
 
     /// Reference to application for cursor operations
-    fileprivate weak var application: WaylandApplication?
+    /// SAFETY: nonisolated(unsafe) because it's only accessed from the main thread
+    nonisolated(unsafe) internal weak var application: WaylandApplication?
 
     /// Create a new Wayland window using libdecor.
     ///
@@ -514,6 +515,11 @@ public final class WaylandWindow: LuminaWindow {
             return nil
         }
         return getToplevel(frame)
+    }
+
+    /// Get the xdg_toplevel for input handling (public wrapper)
+    nonisolated internal func getToplevel() -> OpaquePointer? {
+        return getXdgToplevel()
     }
 
     /// Handle window resize from decoration strategy

@@ -63,11 +63,10 @@ let package = Package(
 
         /// Wayland client bindings for Linux Wayland support
         /// Protocol bindings generated via: swift package plugin generate-wayland-protocols
-        /// Note: C sources are auto-discovered to allow graceful X11 fallback if protocols aren't generated
         .target(
             name: "CWaylandClient",
             path: "Sources/CInterop/CWaylandClient",
-            // NO explicit sources - auto-discover all .c files for graceful fallback
+            // NO explicit sources - auto-discover all .c files
             publicHeadersPath: "include",
             cSettings: [
                 .headerSearchPath("."),
@@ -78,9 +77,6 @@ let package = Package(
                 .linkedLibrary("wayland-egl"),
                 .linkedLibrary("xkbcommon")
                 // libdecor is dynamically loaded at runtime
-            ],
-            plugins: [
-                .plugin(name: "check-wayland-protocols")
             ]
         ),
 
@@ -96,12 +92,6 @@ let package = Package(
                     description: "Generate Wayland protocol C bindings from XML using wayland-scanner"
                 )
             )
-        ),
-
-        /// Build plugin to check if Wayland protocol bindings exist
-        .plugin(
-            name: "check-wayland-protocols",
-            capability: .buildTool()
         ),
 
         // MARK: - Tests

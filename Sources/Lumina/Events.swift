@@ -149,16 +149,20 @@ public enum PointerEvent: Sendable {
     /// This event is sent when the pointer first enters the window from outside.
     /// Use this to change cursor appearance or show hover states.
     ///
-    /// - Parameter windowID: ID of the window the pointer entered
-    case entered(WindowID)
+    /// - Parameters:
+    ///   - windowID: ID of the window the pointer entered
+    ///   - position: Logical position where the pointer entered
+    case entered(WindowID, position: LogicalPosition)
 
     /// Pointer left the window's content area.
     ///
     /// This event is sent when the pointer leaves the window's bounds.
     /// Use this to reset hover states or cursor appearance.
     ///
-    /// - Parameter windowID: ID of the window the pointer left
-    case left(WindowID)
+    /// - Parameters:
+    ///   - windowID: ID of the window the pointer left
+    ///   - position: Logical position where the pointer left
+    case left(WindowID, position: LogicalPosition)
 
     /// Mouse button was pressed.
     ///
@@ -169,7 +173,8 @@ public enum PointerEvent: Sendable {
     ///   - windowID: ID of the window containing the pointer
     ///   - button: Which mouse button was pressed
     ///   - position: Logical position where the press occurred
-    case buttonPressed(WindowID, button: MouseButton, position: LogicalPosition)
+    ///   - modifiers: Active modifier keys at the time of the press
+    case buttonPressed(WindowID, button: MouseButton, position: LogicalPosition, modifiers: ModifierKeys)
 
     /// Mouse button was released.
     ///
@@ -181,7 +186,8 @@ public enum PointerEvent: Sendable {
     ///   - windowID: ID of the window that captured the button press
     ///   - button: Which mouse button was released
     ///   - position: Logical position where the release occurred
-    case buttonReleased(WindowID, button: MouseButton, position: LogicalPosition)
+    ///   - modifiers: Active modifier keys at the time of the release
+    case buttonReleased(WindowID, button: MouseButton, position: LogicalPosition, modifiers: ModifierKeys)
 
     /// Mouse wheel or trackpad scroll occurred.
     ///
@@ -198,8 +204,8 @@ public enum PointerEvent: Sendable {
 
 /// Mouse button enumeration.
 ///
-/// Represents the physical mouse buttons. Additional buttons beyond these three
-/// are not currently supported in Milestone 0.
+/// Represents physical mouse buttons. Supports standard 3-button mice plus
+/// additional buttons (typically back/forward/extra buttons on gaming mice).
 public enum MouseButton: Sendable {
     /// Left (primary) mouse button
     case left
@@ -209,6 +215,21 @@ public enum MouseButton: Sendable {
 
     /// Middle (wheel) mouse button
     case middle
+
+    /// Additional button (button 4, typically "back" on gaming mice)
+    case button4
+
+    /// Additional button (button 5, typically "forward" on gaming mice)
+    case button5
+
+    /// Additional button (button 6)
+    case button6
+
+    /// Additional button (button 7)
+    case button7
+
+    /// Additional button (button 8)
+    case button8
 }
 
 // MARK: - Keyboard Events

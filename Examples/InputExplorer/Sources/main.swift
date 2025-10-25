@@ -12,8 +12,8 @@ import Foundation
 @main
 struct InputExplorer {
     static func main() throws {
-        // NEW API: Initialize platform first, then create app
-        var platform = try createLuminaPlatform()
+        // Initialize platform first, then create app
+        let platform = try createLuminaPlatform()
         var app = try platform.createApp()
 
         var window = try app.createWindow(
@@ -75,24 +75,26 @@ struct InputExplorer {
                     switch pointerEvent {
                     case .moved(let id, let pos):
                         // Only print every 60th move event to avoid spam
-                        if eventCount % 60 == 0 {
+                       // if eventCount % 60 == 0 {
                             print("[\(eventCount)] Pointer moved: \(id) -> (\(pos.x), \(pos.y))")
-                        }
+                       // }
 
-                    case .buttonPressed(let id, let button, let pos):
-                        print("[\(eventCount)] Button pressed: \(id) \(button) at (\(pos.x), \(pos.y))")
+                    case .buttonPressed(let id, let button, let pos, let mods):
+                        let modStr = formatModifiers(mods)
+                        print("[\(eventCount)] Button pressed: \(id) \(button) at (\(pos.x), \(pos.y)) mods=\(modStr)")
 
-                    case .buttonReleased(let id, let button, let pos):
-                        print("[\(eventCount)] Button released: \(id) \(button) at (\(pos.x), \(pos.y))")
+                    case .buttonReleased(let id, let button, let pos, let mods):
+                        let modStr = formatModifiers(mods)
+                        print("[\(eventCount)] Button released: \(id) \(button) at (\(pos.x), \(pos.y)) mods=\(modStr)")
 
                     case .wheel(let id, let dx, let dy):
                         print("[\(eventCount)] Scroll: \(id) -> dx=\(dx), dy=\(dy)")
 
-                    case .entered(let id):
-                        print("[\(eventCount)] Pointer entered window: \(id)")
+                    case .entered(let id, let pos):
+                        print("[\(eventCount)] Pointer entered window: \(id) at (\(pos.x), \(pos.y))")
 
-                    case .left(let id):
-                        print("[\(eventCount)] Pointer left window: \(id)")
+                    case .left(let id, let pos):
+                        print("[\(eventCount)] Pointer left window: \(id) at (\(pos.x), \(pos.y))")
                     }
 
                 // Keyboard Events
@@ -116,8 +118,10 @@ struct InputExplorer {
 
                 // M1 Events (not actively demonstrated in this example)
                 case .redraw:
+                    print("[\(eventCount)] Redraw event")
                     break
                 case .monitor:
+                    print("[\(eventCount)] Monitor event")
                     break
                 }
             }

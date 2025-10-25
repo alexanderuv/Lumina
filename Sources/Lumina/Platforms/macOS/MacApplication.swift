@@ -207,12 +207,12 @@ struct MacApplication: LuminaApp {
                             if !wasInside {
                                 pointerInsideWindow[id] = true
                                 logger.info("Pointer entered window: id = \(id)")
-                                return .pointer(.entered(id))
+                                return .pointer(.entered(id, position: position))
                             }
-                        case .entered(_):
+                        case .entered(_, _):
                             // Ignore enter events - generate from move instead
                             continue
-                        case .left(let id):
+                        case .left(let id, _):
                             // Respect exit events, but only if we were inside
                             if pointerInsideWindow[id] == true {
                                 pointerInsideWindow[id] = false
@@ -315,12 +315,12 @@ struct MacApplication: LuminaApp {
                             if !wasInside {
                                 pointerInsideWindow[id] = true
                                 logger.info("Pointer entered window: id = \(id)")
-                                return .pointer(.entered(id))
+                                return .pointer(.entered(id, position: position))
                             }
-                        case .entered(_):
+                        case .entered(_, _):
                             // Ignore enter events - generate from move instead
                             continue
-                        case .left(let id):
+                        case .left(let id, _):
                             // Respect exit events, but only if we were inside
                             if pointerInsideWindow[id] == true {
                                 pointerInsideWindow[id] = false

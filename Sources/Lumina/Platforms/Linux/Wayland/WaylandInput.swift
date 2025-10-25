@@ -36,14 +36,30 @@ import Foundation
 /// All mutable state is contained in `State` which is @unchecked Sendable because we
 /// guarantee that C callbacks only run synchronously on the main thread during
 /// wl_display_dispatch(), which is called from @MainActor methods.
+/// Decoration area for client-side decorations
+enum DecorationArea: Sendable {
+    case titleBar
+    case leftBorder
+    case rightBorder
+    case bottomBorder
+    case topLeftCorner
+    case topRightCorner
+    case bottomLeftCorner
+    case bottomRightCorner
+}
+
 @MainActor
 final class WaylandInputState {
+    /// Weak reference to application (for cursor restoration on pointer enter)
+    nonisolated(unsafe) fileprivate weak var application: WaylandApplication?
+
     /// Wrapper for mutable state accessed from C callbacks.
     ///
     /// SAFETY: @unchecked Sendable because all mutations happen on main thread via
     /// synchronous C callbacks during wl_display_dispatch().
     internal final class State: @unchecked Sendable {
         // Input Devices
+        var seat: OpaquePointer?
         var pointer: OpaquePointer?
         var keyboard: OpaquePointer?
 
@@ -61,6 +77,19 @@ final class WaylandInputState {
         var pointerY: Float = 0.0
         var pointerEnterSerial: UInt32 = 0  // Serial from last pointer enter event (for cursor)
         var hasPendingMotion = false
+
+        // Main content surface tracking (like GLFW's approach)
+        // Maps WindowID -> main content surface pointer
+        var windowMainSurfaces: [WindowID: OpaquePointer] = [:]
+        // True if pointer is currently over the main content surface (not decorations)
+        var pointerOnMainSurface = false
+
+        // Client-side decoration tracking
+        var decorationSurfaces: [UInt: (windowID: WindowID, area: DecorationArea)] = [:]
+        var pointerOnDecoration: DecorationArea?
+
+        // Modifier key state (tracked from keyboard events)
+        var modifiers: ModifierKeys = []
 
         /// Persistent listener structs (must remain alive for Wayland object lifetime)
         /// CRITICAL: These CANNOT be stack-allocated or they become dangling pointers.
@@ -159,9 +188,15 @@ final class WaylandInputState {
     /// - Parameters:
     ///   - surface: The wl_surface pointer
     ///   - windowID: The Lumina WindowID to associate with this surface
-    func registerSurface(_ surface: OpaquePointer, windowID: WindowID) {
+    ///   - isMainSurface: True if this is the main content surface (not a decoration surface)
+    func registerSurface(_ surface: OpaquePointer, windowID: WindowID, isMainSurface: Bool = true) {
         let surfaceID = UInt(bitPattern: surface)
         state.surfaceToWindowID[surfaceID] = windowID
+
+        // Track main content surface for proper input event filtering (like GLFW)
+        if isMainSurface {
+            state.windowMainSurfaces[windowID] = surface
+        }
     }
 
     /// Unregister a surface mapping when a window is closed.
@@ -176,6 +211,31 @@ final class WaylandInputState {
             state.pointerSurface = nil
             state.pointerWindowID = nil
         }
+    }
+
+    /// Register a decoration surface for client-side decorations.
+    ///
+    /// SAFETY: nonisolated because it only modifies the state dictionary which is safe
+    /// since all modifications happen on the main thread.
+    ///
+    /// - Parameters:
+    ///   - surface: The decoration surface pointer
+    ///   - windowID: The window this decoration belongs to
+    ///   - area: Which decoration area this surface represents
+    nonisolated func registerDecorationSurface(_ surface: OpaquePointer, windowID: WindowID, area: DecorationArea) {
+        let surfaceID = UInt(bitPattern: surface)
+        state.decorationSurfaces[surfaceID] = (windowID, area)
+    }
+
+    /// Unregister a decoration surface.
+    ///
+    /// SAFETY: nonisolated because it only modifies the state dictionary which is safe
+    /// since all modifications happen on the main thread.
+    ///
+    /// - Parameter surface: The decoration surface to unregister
+    nonisolated func unregisterDecorationSurface(_ surface: OpaquePointer) {
+        let surfaceID = UInt(bitPattern: surface)
+        state.decorationSurfaces.removeValue(forKey: surfaceID)
     }
 
     /// Lookup WindowID from wl_surface pointer.
@@ -234,6 +294,164 @@ final class WaylandInputState {
         state.eventQueue.append(event)
     }
 
+    // MARK: - Application Reference
+
+    /// Set the application reference (called during initialization)
+    func setApplication(_ app: WaylandApplication) {
+        self.application = app
+    }
+
+    /// Restore the current cursor on pointer enter (matches GLFW behavior)
+    ///
+    /// SAFETY: nonisolated because called from C callbacks that run synchronously
+    /// on main thread during wl_display_dispatch().
+    nonisolated fileprivate func restoreCursorOnEnter() {
+        guard let app = application else { return }
+
+        let cursorState = app.cursorState
+
+        // Don't restore cursor if it's hidden
+        if cursorState.hidden {
+            return
+        }
+
+        // Restore current cursor or default to arrow
+        let cursorName = cursorState.currentName ?? "left_ptr"
+        applyCursor(cursorName, app: app)
+    }
+
+    /// Handle click on decoration surface (initiate move or resize)
+    ///
+    /// SAFETY: nonisolated because called from C callbacks that run synchronously
+    /// on main thread during wl_display_dispatch().
+    nonisolated fileprivate func handleDecorationClick(windowID: WindowID, area: DecorationArea, serial: UInt32) {
+        guard let app = application,
+              let seat = state.seat else {
+            return
+        }
+
+        // Get the window's xdg_toplevel
+        guard let window = app.waylandWindow(for: windowID),
+              let toplevel = window.getToplevel() else {
+            return
+        }
+
+        switch area {
+        case .titleBar:
+            // Title bar click initiates move
+            xdg_toplevel_move(toplevel, seat, serial)
+
+        case .topLeftCorner:
+            xdg_toplevel_resize(toplevel, seat, serial, UInt32(XDG_TOPLEVEL_RESIZE_EDGE_TOP_LEFT.rawValue))
+        case .topRightCorner:
+            xdg_toplevel_resize(toplevel, seat, serial, UInt32(XDG_TOPLEVEL_RESIZE_EDGE_TOP_RIGHT.rawValue))
+        case .bottomLeftCorner:
+            xdg_toplevel_resize(toplevel, seat, serial, UInt32(XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM_LEFT.rawValue))
+        case .bottomRightCorner:
+            xdg_toplevel_resize(toplevel, seat, serial, UInt32(XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM_RIGHT.rawValue))
+
+        case .leftBorder:
+            xdg_toplevel_resize(toplevel, seat, serial, UInt32(XDG_TOPLEVEL_RESIZE_EDGE_LEFT.rawValue))
+        case .rightBorder:
+            xdg_toplevel_resize(toplevel, seat, serial, UInt32(XDG_TOPLEVEL_RESIZE_EDGE_RIGHT.rawValue))
+        case .bottomBorder:
+            xdg_toplevel_resize(toplevel, seat, serial, UInt32(XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM.rawValue))
+        }
+    }
+
+    /// Get cursor name for decoration area
+    ///
+    /// Uses XDG cursor naming convention (same as GLFW).
+    nonisolated fileprivate func cursorNameForDecorationArea(_ area: DecorationArea) -> String {
+        switch area {
+        case .titleBar:
+            return "left_ptr"
+        case .leftBorder:
+            return "w-resize"
+        case .rightBorder:
+            return "e-resize"
+        case .bottomBorder:
+            return "s-resize"
+        case .topLeftCorner:
+            return "nw-resize"
+        case .topRightCorner:
+            return "ne-resize"
+        case .bottomLeftCorner:
+            return "sw-resize"
+        case .bottomRightCorner:
+            return "se-resize"
+        }
+    }
+
+    /// Apply cursor to pointer (shared with WaylandCursor)
+    ///
+    /// SAFETY: nonisolated because called from C callbacks that run synchronously
+    /// on main thread during wl_display_dispatch().
+    nonisolated fileprivate func applyCursor(_ cursorName: String, app: WaylandApplication) {
+        let appCursorState = app.cursorState
+
+        // Don't apply cursor if it's hidden
+        if appCursorState.hidden {
+            return
+        }
+
+        guard let cursorSurface = appCursorState.surface,
+              let pointer = state.pointer else {
+            return
+        }
+
+        let cursorLoader = app.cursorLoader
+
+        // Determine which theme to use based on buffer scale (default to 1 for global cursor)
+        let theme = appCursorState.themeHiDPI ?? appCursorState.theme
+
+        guard let theme = theme,
+              let getCursor = cursorLoader.wl_cursor_theme_get_cursor,
+              let getBuffer = cursorLoader.wl_cursor_image_get_buffer else {
+            return
+        }
+
+        // Load cursor from theme
+        guard let wlCursorPtr = cursorName.withCString({ getCursor(theme, $0) }) else {
+            return
+        }
+
+        // Bind OpaquePointer to WlCursor structure
+        let wlCursor = UnsafeRawPointer(wlCursorPtr)
+            .assumingMemoryBound(to: WaylandCursorLoader.WlCursor.self)
+            .pointee
+
+        // Get first image from cursor (TODO: handle animated cursors)
+        let imageCount = Int(wlCursor.image_count)
+        guard imageCount > 0,
+              let imagesPtr = wlCursor.images,
+              let imagePtr = imagesPtr[0] else {
+            return
+        }
+
+        // Get buffer for cursor image
+        guard let buffer = getBuffer(imagePtr) else {
+            return
+        }
+
+        // Bind image pointer to WlCursorImage structure
+        let image = UnsafeRawPointer(imagePtr)
+            .assumingMemoryBound(to: WaylandCursorLoader.WlCursorImage.self)
+            .pointee
+
+        // Apply cursor to surface
+        let hotspotX = Int32(image.hotspot_x)
+        let hotspotY = Int32(image.hotspot_y)
+
+        wl_surface_attach(cursorSurface, buffer, 0, 0)
+        wl_surface_damage(cursorSurface, 0, 0, Int32.max, Int32.max)
+        wl_surface_commit(cursorSurface)
+
+        // Set cursor on pointer (use serial from last enter event)
+        let serial = state.pointerEnterSerial
+        wl_pointer_set_cursor(pointer, serial, cursorSurface, hotspotX, hotspotY)
+    }
+
     // MARK: - Seat Capability Handling
 
     /// Setup wl_seat listener to detect input device capabilities.
@@ -269,6 +487,9 @@ private func seatCapabilitiesCallback(
     guard let data, let seat else { return }
 
     let inputState = Unmanaged<WaylandInputState>.fromOpaque(data).takeUnretainedValue()
+
+    // Store seat reference for move/resize operations
+    inputState.state.seat = seat
 
     // Check for pointer capability
     if capabilities & WL_SEAT_CAPABILITY_POINTER.rawValue != 0 {
@@ -357,15 +578,45 @@ private func pointerEnterCallback(
     let inputState = Unmanaged<WaylandInputState>.fromOpaque(data).takeUnretainedValue()
 
     inputState.state.pointerSurface = surface
-    inputState.state.pointerWindowID = inputState.windowID(for: surface)
     inputState.state.pointerEnterSerial = serial  // Store serial for cursor operations
 
     // Convert fixed-point to float
     inputState.state.pointerX = Float(wl_fixed_to_double(surfaceX))
     inputState.state.pointerY = Float(wl_fixed_to_double(surfaceY))
 
-    if let windowID = inputState.state.pointerWindowID {
-        inputState.enqueueEvent(.pointer(.entered(windowID)))
+    // Check if this is a decoration surface
+    let surfaceID = UInt(bitPattern: surface)
+    if let decorationInfo = inputState.state.decorationSurfaces[surfaceID] {
+        // Entering a client-side decoration surface
+        inputState.state.pointerWindowID = decorationInfo.windowID
+        inputState.state.pointerOnDecoration = decorationInfo.area
+
+        // Set cursor based on decoration area
+        if let app = inputState.application {
+            let cursorName = inputState.cursorNameForDecorationArea(decorationInfo.area)
+            inputState.applyCursor(cursorName, app: app)
+        }
+    } else {
+        // Check if this is a surface we own (main window surface)
+        if let windowID = inputState.windowID(for: surface) {
+            // Check if this is the main content surface (like GLFW does)
+            let isMainSurface = inputState.state.windowMainSurfaces[windowID] == surface
+
+            // Entering window surface
+            inputState.state.pointerWindowID = windowID
+            inputState.state.pointerOnDecoration = nil
+            inputState.state.pointerOnMainSurface = isMainSurface  // Track main surface state
+
+            // Only send entered event for main surface
+            if isMainSurface {
+                // DON'T restore cursor automatically - let libdecor/compositor handle it
+                // (SSD mode: compositor sets resize cursors on main surface edges)
+
+                let position = LogicalPosition(x: inputState.state.pointerX, y: inputState.state.pointerY)
+                inputState.enqueueEvent(.pointer(.entered(windowID, position: position)))
+            }
+        }
+        // else: Unknown surface - don't touch cursor
     }
 }
 
@@ -382,12 +633,19 @@ private func pointerLeaveCallback(
 
     let inputState = Unmanaged<WaylandInputState>.fromOpaque(data).takeUnretainedValue()
 
-    if let windowID = inputState.windowID(for: surface) {
-        inputState.enqueueEvent(.pointer(.left(windowID)))
+    // Only send leave event for main window surface (not decorations)
+    if inputState.state.pointerOnMainSurface {
+        if let windowID = inputState.windowID(for: surface) {
+            // Use last known pointer position when leaving
+            let position = LogicalPosition(x: inputState.state.pointerX, y: inputState.state.pointerY)
+            inputState.enqueueEvent(.pointer(.left(windowID, position: position)))
+        }
     }
 
     inputState.state.pointerSurface = nil
     inputState.state.pointerWindowID = nil
+    inputState.state.pointerOnDecoration = nil
+    inputState.state.pointerOnMainSurface = false  // Clear main surface flag
 }
 
 /// Pointer motion callback (C function).
@@ -428,9 +686,27 @@ private func pointerButtonCallback(
 
     guard let windowID = inputState.state.pointerWindowID else { return }
 
+    // Check if button press is on a decoration surface
+    if let decorationArea = inputState.state.pointerOnDecoration {
+        let pressed = (state == WL_POINTER_BUTTON_STATE_PRESSED.rawValue)
+
+        // Only handle left button on decorations
+        if button == 0x110 && pressed {  // BTN_LEFT
+            // Handle decoration click (move or resize)
+            inputState.handleDecorationClick(windowID: windowID, area: decorationArea, serial: serial)
+        }
+        return  // Don't send button events for decoration surfaces
+    }
+
+    // Only send button events if we're on the main content surface (like GLFW)
+    // This filters out button events from libdecor-created subsurfaces
+    if !inputState.state.pointerOnMainSurface {
+        return
+    }
+
     // Translate Wayland button codes to MouseButton
     // Linux input event codes (from linux/input-event-codes.h):
-    // BTN_LEFT = 0x110, BTN_RIGHT = 0x111, BTN_MIDDLE = 0x112
+    // BTN_LEFT = 0x110, BTN_RIGHT = 0x111, BTN_MIDDLE = 0x112, BTN_SIDE = 0x113, BTN_EXTRA = 0x114, etc.
     let mouseButton: MouseButton?
     switch button {
     case 0x110: // BTN_LEFT
@@ -439,6 +715,16 @@ private func pointerButtonCallback(
         mouseButton = .right
     case 0x112: // BTN_MIDDLE
         mouseButton = .middle
+    case 0x113: // BTN_SIDE (typically "back")
+        mouseButton = .button4
+    case 0x114: // BTN_EXTRA (typically "forward")
+        mouseButton = .button5
+    case 0x115: // BTN_FORWARD
+        mouseButton = .button6
+    case 0x116: // BTN_BACK
+        mouseButton = .button7
+    case 0x117: // BTN_TASK
+        mouseButton = .button8
     default:
         mouseButton = nil
     }
@@ -446,12 +732,13 @@ private func pointerButtonCallback(
     guard let mouseButton = mouseButton else { return }
 
     let position = LogicalPosition(x: inputState.state.pointerX, y: inputState.state.pointerY)
+    let modifiers = inputState.state.modifiers
     let pressed = (state == WL_POINTER_BUTTON_STATE_PRESSED.rawValue)
 
     if pressed {
-        inputState.enqueueEvent(.pointer(.buttonPressed(windowID, button: mouseButton, position: position)))
+        inputState.enqueueEvent(.pointer(.buttonPressed(windowID, button: mouseButton, position: position, modifiers: modifiers)))
     } else {
-        inputState.enqueueEvent(.pointer(.buttonReleased(windowID, button: mouseButton, position: position)))
+        inputState.enqueueEvent(.pointer(.buttonReleased(windowID, button: mouseButton, position: position, modifiers: modifiers)))
     }
 }
 
@@ -470,6 +757,9 @@ private func pointerAxisCallback(
     let inputState = Unmanaged<WaylandInputState>.fromOpaque(data).takeUnretainedValue()
 
     guard let windowID = inputState.state.pointerWindowID else { return }
+
+    // Only send scroll events if we're on the main surface (like GLFW)
+    guard inputState.state.pointerOnMainSurface else { return }
 
     // Convert fixed-point to float (Wayland uses 1/256 of a pixel per unit)
     let delta = Float(wl_fixed_to_double(value))
@@ -496,8 +786,10 @@ private func pointerFrameCallback(
 
     let inputState = Unmanaged<WaylandInputState>.fromOpaque(data).takeUnretainedValue()
 
-    // Deliver coalesced motion event
-    if inputState.state.hasPendingMotion, let windowID = inputState.state.pointerWindowID {
+    // Deliver coalesced motion event (only for main surface, like GLFW)
+    if inputState.state.hasPendingMotion,
+       let windowID = inputState.state.pointerWindowID,
+       inputState.state.pointerOnMainSurface {
         let position = LogicalPosition(x: inputState.state.pointerX, y: inputState.state.pointerY)
         inputState.enqueueEvent(.pointer(.moved(windowID, position: position)))
         inputState.state.hasPendingMotion = false
@@ -746,6 +1038,24 @@ private func keyboardModifiersCallback(
             0, 0,
             group
         )
+
+        // Update our modifier keys state by checking XKB state
+        var modifiers: ModifierKeys = []
+
+        if xkb_state_mod_name_is_active(xkbState, "Shift", XKB_STATE_MODS_EFFECTIVE) == 1 {
+            modifiers.insert(.shift)
+        }
+        if xkb_state_mod_name_is_active(xkbState, "Control", XKB_STATE_MODS_EFFECTIVE) == 1 {
+            modifiers.insert(.control)
+        }
+        if xkb_state_mod_name_is_active(xkbState, "Mod1", XKB_STATE_MODS_EFFECTIVE) == 1 {  // Alt
+            modifiers.insert(.alt)
+        }
+        if xkb_state_mod_name_is_active(xkbState, "Mod4", XKB_STATE_MODS_EFFECTIVE) == 1 {  // Super/Command
+            modifiers.insert(.command)
+        }
+
+        inputState.state.modifiers = modifiers
     }
 }
 

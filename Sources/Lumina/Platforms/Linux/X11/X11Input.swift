@@ -80,9 +80,35 @@ public enum X11Input {
             button = .middle
         case 3:
             button = .right
+        case 8:  // X11 button 8 (typically "back")
+            button = .button4
+        case 9:  // X11 button 9 (typically "forward")
+            button = .button5
+        case 6:  // X11 button 6
+            button = .button6
+        case 7:  // X11 button 7
+            button = .button7
+        case 10: // X11 button 10
+            button = .button8
         default:
-            // Additional buttons not supported in Milestone 1
+            // Unsupported button
             return nil
+        }
+
+        // Extract modifiers from state field
+        var modifiers: ModifierKeys = []
+        let state = buttonEvent.state
+        if state & UInt16(XCB_MOD_MASK_SHIFT.rawValue) != 0 {
+            modifiers.insert(.shift)
+        }
+        if state & UInt16(XCB_MOD_MASK_CONTROL.rawValue) != 0 {
+            modifiers.insert(.control)
+        }
+        if state & UInt16(XCB_MOD_MASK_1.rawValue) != 0 {  // Alt
+            modifiers.insert(.alt)
+        }
+        if state & UInt16(XCB_MOD_MASK_4.rawValue) != 0 {  // Super/Command
+            modifiers.insert(.command)
         }
 
         // Extract position (X11 uses top-left origin, same as Lumina)
@@ -92,9 +118,9 @@ public enum X11Input {
         )
 
         if pressed {
-            return .buttonPressed(windowID, button: button, position: position)
+            return .buttonPressed(windowID, button: button, position: position, modifiers: modifiers)
         } else {
-            return .buttonReleased(windowID, button: button, position: position)
+            return .buttonReleased(windowID, button: button, position: position, modifiers: modifiers)
         }
     }
 

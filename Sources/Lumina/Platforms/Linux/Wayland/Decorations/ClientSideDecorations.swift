@@ -22,6 +22,7 @@ final class ClientSideDecorations: DecorationStrategy {
     // MARK: - State
 
     private weak var window: WaylandWindow?
+    private weak var inputState: WaylandInputState?
     private let compositor: OpaquePointer
     private let subcompositor: OpaquePointer
     private let shm: OpaquePointer
@@ -66,6 +67,7 @@ final class ClientSideDecorations: DecorationStrategy {
 
     func createDecorations(for window: WaylandWindow) throws {
         self.window = window
+        self.inputState = window.application?.inputState
 
         guard let mainSurface = window.getSurface() else {
             throw DecorationError.surfaceCreationFailed
@@ -91,6 +93,14 @@ final class ClientSideDecorations: DecorationStrategy {
         attachBufferToSurface(leftSurface)
         attachBufferToSurface(rightSurface)
         attachBufferToSurface(bottomSurface)
+
+        // Register decoration surfaces with input state for pointer events
+        if let inputState = inputState {
+            if let surf = topSurface { inputState.registerDecorationSurface(surf, windowID: window.id, area: .titleBar) }
+            if let surf = leftSurface { inputState.registerDecorationSurface(surf, windowID: window.id, area: .leftBorder) }
+            if let surf = rightSurface { inputState.registerDecorationSurface(surf, windowID: window.id, area: .rightBorder) }
+            if let surf = bottomSurface { inputState.registerDecorationSurface(surf, windowID: window.id, area: .bottomBorder) }
+        }
 
         logger.debug("Created client-side decorations")
     }
@@ -131,6 +141,14 @@ final class ClientSideDecorations: DecorationStrategy {
     }
 
     func destroy() {
+        // Unregister decoration surfaces from input state
+        if let inputState = inputState {
+            if let surf = topSurface { inputState.unregisterDecorationSurface(surf) }
+            if let surf = leftSurface { inputState.unregisterDecorationSurface(surf) }
+            if let surf = rightSurface { inputState.unregisterDecorationSurface(surf) }
+            if let surf = bottomSurface { inputState.unregisterDecorationSurface(surf) }
+        }
+
         // Destroy subsurfaces
         if let sub = topSubsurface { wl_subsurface_destroy(sub) }
         if let sub = leftSubsurface { wl_subsurface_destroy(sub) }

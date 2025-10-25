@@ -1,12 +1,10 @@
 # WaylandDemo
 
-**⚠️ NOTE: This example is currently non-functional as Wayland support in Lumina is still under development.**
-
 Demonstrates explicit Wayland backend selection on Linux.
 
 ## Purpose
 
-This example shows how to force the Wayland backend instead of relying on automatic backend detection. Once Wayland support is complete, this will be useful for:
+This example shows how to force the Wayland backend instead of relying on automatic backend detection. This is useful for:
 
 - **Testing**: Ensure your application works correctly with Wayland
 - **Development**: Test Wayland-specific features without X11 fallback
@@ -55,25 +53,37 @@ Or if you used the build script, it will automatically run after building.
 
 ## Current Status
 
-The Wayland backend in Lumina is **currently under development**. This example demonstrates the intended API for forcing Wayland backend selection:
+The Wayland backend is **fully functional**. This example demonstrates forcing Wayland backend selection:
 
 ```swift
 #if LUMINA_WAYLAND
-var app = try createLuminaApp(.wayland)  // Force Wayland - no X11 fallback
+var platform = try createLuminaPlatform(.wayland)  // Force Wayland - no X11 fallback
+var app = try platform.createApp()
 #endif
 ```
 
-The example will compile and run with proper error handling when `LUMINA_WAYLAND` is not defined, but the Wayland implementation itself is not yet complete.
+The example will compile and run with proper error handling when `LUMINA_WAYLAND` is not defined.
+
+### Wayland Feature Status
+
+- ✅ Window creation and management
+- ✅ Monitor enumeration and information
+- ✅ Pointer events (enter/leave/move/click) with position tracking
+- ✅ Extended button support (8 buttons: left/right/middle/button4-8)
+- ✅ Modifier keys (Shift/Ctrl/Alt/Cmd) in button events
+- ✅ Client-side decorations with full input handling
+- ✅ Keyboard events with XKB support
+- ✅ Window resize and move operations
+- ⚠️ Cursor modes (normal mode only - hidden/disabled modes in progress)
+- ⚠️ Raw input for FPS games (in progress)
 
 ## Troubleshooting
 
 ### Build Errors
 
-**Known Issue**: Building with `--traits Wayland` currently fails due to incomplete Wayland implementation in Lumina. This is expected and being actively worked on.
-
 If you get "LUMINA_WAYLAND is not defined" when running without the trait:
 - This is expected behavior - the example gracefully handles missing Wayland support
-- The example will show instructions on how to enable Wayland when it's ready
+- Build with `--traits Wayland` to enable Wayland backend
 
 ### Runtime Errors
 
@@ -90,12 +100,12 @@ echo $XDG_SESSION_TYPE  # Should output "wayland"
 
 ## Comparison with Auto-Detection
 
-The standard `createLuminaApp()` (or `createLuminaApp(.auto)`) will:
+The standard `createLuminaPlatform()` (or `createLuminaPlatform(.auto)`) will:
 1. Try Wayland first if `WAYLAND_DISPLAY` is set
 2. Fall back to X11 if Wayland initialization fails
 3. Work in both Wayland and X11 environments
 
-This example uses `createLuminaApp(.wayland)` which:
+This example uses `createLuminaPlatform(.wayland)` which:
 1. Forces Wayland backend only
 2. Fails immediately if Wayland is unavailable
 3. Useful for testing/development scenarios
@@ -105,7 +115,8 @@ This example uses `createLuminaApp(.wayland)` which:
 ```swift
 #if LUMINA_WAYLAND
 // Force Wayland backend - no X11 fallback
-var app = try createLuminaApp(.wayland)
+var platform = try createLuminaPlatform(.wayland)
+var app = try platform.createApp()
 
 var window = try app.createWindow(
     title: "Native Wayland Window",

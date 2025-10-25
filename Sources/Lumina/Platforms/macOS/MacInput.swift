@@ -41,9 +41,15 @@ internal func translateNSEvent(_ nsEvent: NSEvent, for windowID: WindowID) -> Ev
     case .scrollWheel:
         return translateScrollWheel(nsEvent, windowID: windowID)
     case .mouseEntered:
-        return .pointer(.entered(windowID))
+        guard let position = translateMousePosition(nsEvent) else {
+            return nil
+        }
+        return .pointer(.entered(windowID, position: position))
     case .mouseExited:
-        return .pointer(.left(windowID))
+        guard let position = translateMousePosition(nsEvent) else {
+            return nil
+        }
+        return .pointer(.left(windowID, position: position))
 
     // Keyboard events
     case .keyDown:
@@ -69,7 +75,8 @@ private func translateMouseDown(
         return nil
     }
 
-    return .pointer(.buttonPressed(windowID, button: button, position: position))
+    let modifiers = translateModifiers(nsEvent.modifierFlags)
+    return .pointer(.buttonPressed(windowID, button: button, position: position, modifiers: modifiers))
 }
 
 @MainActor
@@ -82,7 +89,8 @@ private func translateMouseUp(
         return nil
     }
 
-    return .pointer(.buttonReleased(windowID, button: button, position: position))
+    let modifiers = translateModifiers(nsEvent.modifierFlags)
+    return .pointer(.buttonReleased(windowID, button: button, position: position, modifiers: modifiers))
 }
 
 @MainActor
