@@ -39,11 +39,11 @@ public final class MacPlatform: LuminaPlatform {
 
     public init() throws {
         logger = LuminaLogger(label: "com.lumina.macos.platform", level: .info)
-        logger.logEvent("Initializing macOS platform")
+        logger.info("Initializing macOS platform")
 
         // macOS doesn't require explicit platform connection
         // NSScreen and NSApplication APIs are globally available
-        logger.logEvent("macOS platform initialized successfully")
+        logger.info("macOS platform initialized successfully")
     }
 
     // MARK: - Monitor Enumeration
@@ -66,7 +66,7 @@ public final class MacPlatform: LuminaPlatform {
         }
 
         appCreated = true
-        logger.logEvent("Creating macOS application")
+        logger.info("Creating macOS application")
 
         return try MacApplication(platform: self)
     }
@@ -77,7 +77,7 @@ public final class MacPlatform: LuminaPlatform {
         // macOS supports ProMotion (dynamic refresh rate) on newer MacBook Pros
         // and Studio Display. Also supports fractional scaling through Retina modes.
         let logger = LuminaLogger(label: "com.lumina.macos", level: .debug)
-        logger.logCapabilityDetection("Monitor capabilities: dynamic refresh rate = true (ProMotion), fractional scaling = true (Retina)")
+        logger.debug("Monitor capabilities: dynamic refresh rate = true (ProMotion), fractional scaling = true (Retina)")
         return MonitorCapabilities(
             supportsDynamicRefreshRate: true,  // ProMotion on supported hardware
             supportsFractionalScaling: true     // Retina scaling modes
@@ -88,7 +88,7 @@ public final class MacPlatform: LuminaPlatform {
         // macOS supports text clipboard via NSPasteboard
         // Images and HTML support is future work
         let logger = LuminaLogger(label: "com.lumina.macos", level: .debug)
-        logger.logCapabilityDetection("Clipboard capabilities: text = true, images = false, HTML = false")
+        logger.debug("Clipboard capabilities: text = true, images = false, HTML = false")
         return ClipboardCapabilities(
             supportsText: true,
             supportsImages: false,

@@ -39,7 +39,7 @@ private final class UserEventQueue: @unchecked Sendable {
 }
 
 /// Thread-safe window event queue
-private final class WindowEventQueue: @unchecked Sendable {
+internal final class WindowEventQueue: @unchecked Sendable {
     private let lock = NSLock()
     private var events: [WindowEvent] = []
 
@@ -208,12 +208,12 @@ public final class MacApplication: LuminaApp {
                     // respect exit but filter spurious ones
                     if case .pointer(let pointerEvent) = event {
                         switch pointerEvent {
-                        case .moved(let id, _):
+                        case .moved(let id, let position):
                             // Generate enter event on first movement in window
                             let wasInside = pointerInsideWindow[id] ?? false
                             if !wasInside {
                                 pointerInsideWindow[id] = true
-                                logger.info("Pointer entered window: id = \(id)")
+                                logger.debug("Pointer entered window: id = \(id)")
                                 return .pointer(.entered(id, position: position))
                             }
                         case .entered(_, _):
@@ -223,7 +223,7 @@ public final class MacApplication: LuminaApp {
                             // Respect exit events, but only if we were inside
                             if pointerInsideWindow[id] == true {
                                 pointerInsideWindow[id] = false
-                                logger.info("Pointer left window: id = \(id)")
+                                logger.debug("Pointer left window: id = \(id)")
                             } else {
                                 // Skip spurious exit
                                 continue
@@ -280,12 +280,11 @@ public final class MacApplication: LuminaApp {
         processUserEvents()
     }
 
-    mutating func pumpEvents(mode: ControlFlowMode) -> Event? {
+    public func pumpEvents(mode: ControlFlowMode) -> Event? {
         logger.debug("pumpEvents: mode = \(mode)")
 
         // Determine timeout based on control flow mode
-        let timeout: Date 
-        switch mode {
+        let timeout: Date = switch mode {
         case .wait:
             .distantFuture
         case .poll:
@@ -317,12 +316,12 @@ public final class MacApplication: LuminaApp {
                     // respect exit but filter spurious ones
                     if case .pointer(let pointerEvent) = event {
                         switch pointerEvent {
-                        case .moved(let id, _):
+                        case .moved(let id, let position):
                             // Generate enter event on first movement in window
                             let wasInside = pointerInsideWindow[id] ?? false
                             if !wasInside {
                                 pointerInsideWindow[id] = true
-                                logger.info("Pointer entered window: id = \(id)")
+                                logger.debug("Pointer entered window: id = \(id)")
                                 return .pointer(.entered(id, position: position))
                             }
                         case .entered(_, _):
@@ -332,7 +331,7 @@ public final class MacApplication: LuminaApp {
                             // Respect exit events, but only if we were inside
                             if pointerInsideWindow[id] == true {
                                 pointerInsideWindow[id] = false
-                                logger.info("Pointer left window: id = \(id)")
+                                logger.debug("Pointer left window: id = \(id)")
                             } else {
                                 // Skip spurious exit
                                 continue
@@ -435,7 +434,7 @@ public final class MacApplication: LuminaApp {
         size: LogicalSize,
         resizable: Bool,
         monitor: Monitor?
-    ) throws -> LuminaWindow {
+    ) throws -> MacWindow {
         logger.info("Creating window: title = '\(title)', size = \(size), resizable = \(resizable)")
 
         // Capture windowEventQueue for posting close events
@@ -449,7 +448,7 @@ public final class MacApplication: LuminaApp {
             resizable: resizable,
             monitor: monitor,
             closeCallback: { [onWindowClosed] windowID in
-                windowLogger.logEvent("Window closed: id = \(windowID)")
+                windowLogger.info("Window closed: id = \(windowID)")
 
                 // Post a window closed event so custom event loops can detect it
                 eventQueue.append(.closed(windowID))
@@ -472,7 +471,8 @@ public final class MacApplication: LuminaApp {
 
                 // Trigger the application's close callback
                 onWindowClosed?(windowID)
-            }
+            },
+            eventQueue: eventQueue
         )
 
         // Register the window
@@ -486,7 +486,7 @@ public final class MacApplication: LuminaApp {
         onWindowClosed = callback
     }
 
-    mutating func quit() {
+    public func quit() {
         logger.info("Application quit requested")
 
         // Request application termination

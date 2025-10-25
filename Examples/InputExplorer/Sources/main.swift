@@ -16,7 +16,7 @@ struct InputExplorer {
         let platform = try createLuminaPlatform()
         var app = try platform.createApp()
 
-        var window = try app.createWindow(
+        let window = try app.createWindow(
             title: "Input Explorer - Events",
             size: LogicalSize(width: 600, height: 400),
             resizable: true,
@@ -37,6 +37,7 @@ struct InputExplorer {
         // Custom event loop
         var running = true
         var eventCount = 0
+        var pointerMovedCount = 0
 
         while running {
             // Poll for events
@@ -74,10 +75,11 @@ struct InputExplorer {
                 case .pointer(let pointerEvent):
                     switch pointerEvent {
                     case .moved(let id, let pos):
-                        // Only print every 60th move event to avoid spam
-                       // if eventCount % 60 == 0 {
-                            print("[\(eventCount)] Pointer moved: \(id) -> (\(pos.x), \(pos.y))")
-                       // }
+                        pointerMovedCount += 1
+                        // Print first event and then every 30th
+                        if pointerMovedCount == 1 || pointerMovedCount % 30 == 0 {
+                            print("[\(eventCount)] Pointer moved: \(id) -> (\(pos.x), \(pos.y)) [#\(pointerMovedCount)]")
+                        }
 
                     case .buttonPressed(let id, let button, let pos, let mods):
                         let modStr = formatModifiers(mods)

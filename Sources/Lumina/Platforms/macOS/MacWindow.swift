@@ -2,15 +2,17 @@
 import AppKit
 import Foundation
 
-/// Window delegate to handle close events
+/// Window delegate to handle window events
 @MainActor
 private final class MacWindowDelegate: NSObject, NSWindowDelegate {
     private let windowID: WindowID
     private let closeCallback: WindowCloseCallback?
+    private let eventQueue: WindowEventQueue
 
-    init(windowID: WindowID, closeCallback: WindowCloseCallback?) {
+    init(windowID: WindowID, closeCallback: WindowCloseCallback?, eventQueue: WindowEventQueue) {
         self.windowID = windowID
         self.closeCallback = closeCallback
+        self.eventQueue = eventQueue
         super.init()
     }
 
@@ -22,6 +24,51 @@ private final class MacWindowDelegate: NSObject, NSWindowDelegate {
         // Notify the application that this window is closing
         // This will unregister the window from the app's registry
         closeCallback?(windowID)
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        let contentSize = window.contentRect(forFrameRect: window.frame).size
+        let size = LogicalSize(width: Float(contentSize.width), height: Float(contentSize.height))
+        eventQueue.append(.resized(windowID, size))
+    }
+
+    func windowDidMove(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        let frame = window.frame
+        let screen = window.screen ?? NSScreen.main!
+        let screenFrame = screen.frame
+
+        // Convert from AppKit's bottom-left to top-left origin
+        let topLeftY = frame.origin.y + frame.size.height
+        let x = frame.origin.x
+        let y = screenFrame.size.height - topLeftY
+
+        let position = LogicalPosition(x: Float(x), y: Float(y))
+        eventQueue.append(.moved(windowID, position))
+    }
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        eventQueue.append(.focused(windowID))
+    }
+
+    func windowDidResignKey(_ notification: Notification) {
+        eventQueue.append(.unfocused(windowID))
+    }
+
+    func windowDidChangeBackingProperties(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+
+        // Get old and new scale factors
+        if let userInfo = notification.userInfo,
+           let oldScaleNumber = userInfo[NSWindow.oldScaleFactorUserInfoKey] as? NSNumber {
+            let oldScale = Float(oldScaleNumber.doubleValue)
+            let newScale = Float(window.backingScaleFactor)
+
+            if oldScale != newScale {
+                eventQueue.append(.scaleFactorChanged(windowID, oldFactor: oldScale, newFactor: newScale))
+            }
+        }
     }
 }
 
@@ -57,6 +104,7 @@ public final class MacWindow: LuminaWindow {
     ///   - resizable: Whether the window can be resized by the user
     ///   - monitor: Optional monitor to create the window on (uses primary if nil)
     ///   - closeCallback: Optional callback to invoke when the window closes
+    ///   - eventQueue: Queue for posting window events (moved, resized, focus, etc.)
     /// - Returns: Newly created MacWindow
     /// - Throws: LuminaError if window creation fails
     internal static func create(
@@ -64,7 +112,8 @@ public final class MacWindow: LuminaWindow {
         size: LogicalSize,
         resizable: Bool,
         monitor: Monitor? = nil,
-        closeCallback: WindowCloseCallback? = nil
+        closeCallback: WindowCloseCallback? = nil,
+        eventQueue: WindowEventQueue
     ) throws -> MacWindow {
         // Create content rect for the window
         let contentRect = NSRect(
@@ -126,8 +175,8 @@ public final class MacWindow: LuminaWindow {
         // Create window ID first (needed for delegate)
         let windowID = WindowID()
 
-        // Create and set delegate to handle close events
-        let delegate = MacWindowDelegate(windowID: windowID, closeCallback: closeCallback)
+        // Create and set delegate to handle window events
+        let delegate = MacWindowDelegate(windowID: windowID, closeCallback: closeCallback, eventQueue: eventQueue)
         nsWindow.delegate = delegate
 
         // Create window wrapper
