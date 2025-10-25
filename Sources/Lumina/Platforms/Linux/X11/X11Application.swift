@@ -419,6 +419,13 @@ final class X11Application: LuminaApp {
         case XCB_KEY_PRESS:
             return xcbEvent.withMemoryRebound(to: xcb_key_press_event_t.self, capacity: 1) { ptr in
                 guard let windowID = windowRegistry.windowID(for: ptr.pointee.event) else { return nil }
+
+                // Generate text input event if this key produces text, and queue it for next poll()
+                if let textEvent = X11Input.translateTextInput(xcbEvent, windowID: windowID, xkbState: xkbState) {
+                    eventQueue.append(.keyboard(textEvent))
+                }
+
+                // Return the key down event
                 return X11Input.translateKeyEvent(xcbEvent, windowID: windowID, pressed: true, xkbState: xkbState).map { .keyboard($0) }
             }
 

@@ -212,11 +212,11 @@ public final class WaylandApplication: LuminaApp {
             return
         }
 
-        let logger = self.logger
+        // Note: C function pointers cannot capture context, so we use print instead of logger
         guard let decorInterface = lumina_alloc_libdecor_interface({ _, error, message in
             let errorStr = error == LIBDECOR_ERROR_COMPOSITOR_INCOMPATIBLE ? "compositor incompatible" : "invalid configuration"
             let msg = message.map { String(cString: $0) } ?? "unknown"
-            logger.error("libdecor error: \(errorStr) - \(msg)")
+            print("[Lumina] libdecor error: \(errorStr) - \(msg)")
         }) else {
             logger.error("Failed to allocate libdecor interface")
             return

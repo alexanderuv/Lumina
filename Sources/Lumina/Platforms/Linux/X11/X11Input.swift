@@ -304,21 +304,35 @@ public enum X11Input {
         let keyEvent = xcbEvent.withMemoryRebound(to: xcb_key_press_event_t.self, capacity: 1) { $0.pointee }
         let x11Keycode = keyEvent.detail
 
-        // Convert keysym to UTF-8 text
+        // Convert X11 keycode to XKB keycode
         let xkbKeycode = xkb_keycode_t(x11Keycode)
-        var buffer = [UInt8](repeating: 0, count: 32)
-        let length = xkb_state_key_get_utf8(xkbState, xkbKeycode, &buffer, buffer.count)
 
-        if length > 0 && length < buffer.count {
-            let textBytes = buffer.prefix(Int(length))
-            let text = String(decoding: textBytes, as: UTF8.self)
-            // Only generate text input for printable characters
-            if !text.isEmpty && text.rangeOfCharacter(from: .controlCharacters) == nil {
-                return .textInput(windowID, text: text)
-            }
+        // Get the keysym for this key
+        let keysym = xkb_state_key_get_one_sym(xkbState, xkbKeycode)
+
+        // Skip if this is a control key (no text output)
+        guard keysym >= 0x20 else {
+            return nil
         }
 
-        return nil
+        // Convert keysym to UTF-8 string
+        var buffer = [CChar](repeating: 0, count: 64)
+        let count = xkb_state_key_get_utf8(xkbState, xkbKeycode, &buffer, buffer.count)
+
+        guard count > 0 else {
+            return nil
+        }
+
+        // Convert buffer to String using proper decoding (truncating null terminator)
+        let bytes = buffer.prefix(Int(count)).map { UInt8(bitPattern: $0) }
+        let text = String(decoding: bytes, as: UTF8.self)
+
+        // Only generate text input for printable characters
+        guard !text.isEmpty && text.rangeOfCharacter(from: .controlCharacters) == nil else {
+            return nil
+        }
+
+        return .textInput(windowID, text: text)
     }
 
     // MARK: - Modifier Key Translation
