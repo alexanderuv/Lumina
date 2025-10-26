@@ -26,29 +26,6 @@ public enum DpiAwarenessLevel: Sendable {
     case unknown
 }
 
-/// Thread-safe user event queue
-private final class UserEventQueue: @unchecked Sendable {
-    private let lock = NSLock()
-    private var events: [UserEvent] = []
-
-    func append(_ event: UserEvent) {
-        lock.lock()
-        defer { lock.unlock() }
-        events.append(event)
-    }
-
-    func removeAll() -> [UserEvent] {
-        lock.lock()
-        defer { lock.unlock() }
-        let allEvents = events
-        events.removeAll()
-        return allEvents
-    }
-}
-
-/// Thread-safe window event queue (removed - using GlobalEventQueue in WinWindow.swift)
-/// This class is no longer needed as we removed the duplicate WindowEventQueue
-
 // Custom message ID for user events (WM_USER + 1)
 private let WM_LUMINA_USER_EVENT: UINT = UINT(WM_USER + 1)
 
@@ -59,11 +36,16 @@ private let WM_LUMINA_USER_EVENT: UINT = UINT(WM_USER + 1)
 /// This type is public only because Swift requires it for protocol extensions.
 /// It should be treated as an implementation detail.
 @MainActor
-struct WinApplication: LuminaApp {
+public final class WinApplication: LuminaApp {
+    public typealias Window = WinWindow
+
     private var shouldQuit: Bool = false
-    private let userEventQueue = UserEventQueue()
     // Note: Window tracking is handled by WinWindowRegistry in WinWindow.swift
     private var onWindowClosed: WindowCloseCallback?
+
+    /// FIFO event queue for all events (system + user)
+    /// Accessed by WndProc via WinPlatform.shared.app
+    internal var eventQueue: [Event] = []
 
     /// The main thread ID - captured at init time for thread-safe postUserEvent
     private let mainThreadId: DWORD
@@ -72,9 +54,9 @@ struct WinApplication: LuminaApp {
     private(set) var dpiAwarenessLevel: DpiAwarenessLevel = .unknown
 
     /// Whether the application should quit when the last window is closed.
-    var exitOnLastWindowClosed: Bool = true
+    public var exitOnLastWindowClosed: Bool = true
 
-    init() throws {
+    init(platform: WinPlatform) throws {
         // Capture the main thread ID for use in postUserEvent
         self.mainThreadId = GetCurrentThreadId()
         // Set DPI awareness for proper scaling
@@ -93,9 +75,11 @@ struct WinApplication: LuminaApp {
                 self.dpiAwarenessLevel = Self.queryDpiAwarenessLevel()
             }
         }
+        // Register self with platform for WndProc access (must be after all properties initialized)
+        platform.app = self
     }
 
-    public mutating func run() throws {
+    public func run() throws {
         shouldQuit = false
 
         // Windows message pump - blocking until quit
@@ -108,96 +92,65 @@ struct WinApplication: LuminaApp {
 
             TranslateMessage(&msg)
             DispatchMessageW(&msg)
-
-            // Process user events if we received our custom message
-            if msg.message == WM_LUMINA_USER_EVENT {
-                processUserEvents()
-            }
         }
     }
 
-    mutating func poll() throws -> Event? {
-        // First, check if we have any queued events from WndProc
-        if let event = GlobalEventQueue.shared.removeFirst() {
+    public func poll() throws -> Event? {
+        // Check event queue first for FIFO ordering
+        if let event = pollFromQueue() {
             return event
         }
 
-        // Process Windows messages until we get an event or run out of messages
+        // Process all available Windows messages until we get an event or run out
+        // Loop here to give Tasks (scheduled from WndProc) a chance to execute
         while true {
-            // Non-blocking message pump
             var msg = MSG()
 
             guard PeekMessageW(&msg, nil, 0, 0, UINT(PM_REMOVE)) else {
-                // No messages available, check queue one more time
-                return GlobalEventQueue.shared.removeFirst()
+                // No more messages, check queue one final time
+                return pollFromQueue()
             }
 
             TranslateMessage(&msg)
             DispatchMessageW(&msg)
 
-            // Check for user events
-            if msg.message == WM_LUMINA_USER_EVENT {
-                // Check if user event is in queue, otherwise return nil
-                if let userEvent = pollUserEvent() {
-                    return userEvent
-                }
-            }
-
-            // After processing messages, check if WndProc queued any events
-            if let event = GlobalEventQueue.shared.removeFirst() {
+            // Check if WndProc queued any events via Task
+            if let event = pollFromQueue() {
                 return event
             }
 
-            // Continue looping to process more messages
+            // Continue processing messages
         }
     }
 
-    /// Poll for a single user event from the queue.
-    private mutating func pollUserEvent() -> Event? {
-        let pendingEvents = userEventQueue.removeAll()
-        guard let userEvent = pendingEvents.first else {
-            return nil
-        }
-
-        // Re-queue remaining events
-        for event in pendingEvents.dropFirst() {
-            userEventQueue.append(event)
-        }
-
-        return .user(userEvent)
+    private func pollFromQueue() -> Event? {
+        guard !eventQueue.isEmpty else { return nil }
+        return eventQueue.removeFirst()
     }
 
-    public mutating func wait() throws {
+    public func wait() throws {
+        if !eventQueue.isEmpty {
+            return
+        }
+
         // Low-power wait for next message
         WaitMessage()
-
-        // After waking, process one message
-        var msg = MSG()
-        if PeekMessageW(&msg, nil, 0, 0, UINT(PM_REMOVE)) {
-            TranslateMessage(&msg)
-            DispatchMessageW(&msg)
-
-            if msg.message == WM_LUMINA_USER_EVENT {
-                processUserEvents()
-            }
-        }
     }
 
     public func postUserEvent(_ event: UserEvent) {
-        // Add event to queue
-        userEventQueue.append(event)
+        // Add event to app's event queue for FIFO ordering
+        eventQueue.append(Event.user(event))
 
-        // Wake up the message loop by posting a custom message to the MAIN thread
-        // Use the captured mainThreadId, not GetCurrentThreadId() which returns the calling thread
+        // Wake up the message loop if it's waiting
         PostThreadMessageW(mainThreadId, WM_LUMINA_USER_EVENT, 0, 0)
     }
 
-    mutating func createWindow(
+    public func createWindow(
         title: String,
         size: LogicalSize,
         resizable: Bool,
         monitor: Monitor?
-    ) throws -> LuminaWindow {
+    ) throws -> WinWindow {
         // Capture values for the close callback
         let threadId = mainThreadId
         let shouldExitOnLastWindow = exitOnLastWindowClosed
@@ -212,8 +165,8 @@ struct WinApplication: LuminaApp {
                 // Note: WinWindowRegistry.unregister() is already called by WndProc on WM_DESTROY
                 // So we don't need to unregister here
 
-                // Post a window closed event for custom event loops
-                GlobalEventQueue.shared.append(.window(.closed(windowID)))
+                // Post a window closed event to app's event queue
+                self.eventQueue.append(Event.window(.closed(windowID)))
 
                 // Wake up the event loop by posting a user event
                 PostThreadMessageW(threadId, WM_LUMINA_USER_EVENT, 0, 0)
@@ -232,27 +185,63 @@ struct WinApplication: LuminaApp {
         // Note: Window is registered in WinWindowRegistry by WinWindow.create()
         // No need for duplicate tracking here
 
-        return winWindow as LuminaWindow
+        return winWindow
     }
 
-    mutating func setWindowCloseCallback(_ callback: @escaping WindowCloseCallback) {
+    func setWindowCloseCallback(_ callback: @escaping WindowCloseCallback) {
         onWindowClosed = callback
     }
 
-    mutating func quit() {
+    public func quit() {
         // Post quit message to terminate the message loop
         PostQuitMessage(0)
         shouldQuit = true
     }
 
-    // MARK: - Private Helpers
+    public func pumpEvents(mode: ControlFlowMode) -> Event? {
+        // Check if we have any queued events
+        if let event = pollFromQueue() {
+            return event
+        }
 
-    private mutating func processUserEvents() {
-        let _ = userEventQueue.removeAll()
-        // User events are queued but need to be retrieved through
-        // a callback mechanism (event handlers/callbacks will be added later)
-        // For now, they're just processed and discarded
+        switch mode {
+        case .wait:
+            // Block until an event arrives
+            WaitMessage()
+            // Process one message
+            var msg = MSG()
+            if PeekMessageW(&msg, nil, 0, 0, UINT(PM_REMOVE)) {
+                TranslateMessage(&msg)
+                DispatchMessageW(&msg)
+            }
+            // Check queue after processing
+            return pollFromQueue()
+
+        case .poll:
+            // Non-blocking poll
+            return try? poll()
+
+        case .waitUntil(let deadline):
+            // Wait with timeout
+            let now = Date()
+            let timeoutSeconds = deadline.internalDate.timeIntervalSince(now)
+            let timeoutMs = max(0, Int(timeoutSeconds * 1000))
+            if timeoutMs > 0 {
+                _ = MsgWaitForMultipleObjects(0, nil, false, DWORD(timeoutMs), UINT(QS_ALLINPUT))
+            }
+            // Process available messages
+            var msg = MSG()
+            if PeekMessageW(&msg, nil, 0, 0, UINT(PM_REMOVE)) {
+                TranslateMessage(&msg)
+                DispatchMessageW(&msg)
+            }
+            // Check queue after processing
+            return pollFromQueue()
+        }
     }
+
+    // MARK: - Private Helpers
+    // (No helper methods needed - all events use unified GlobalEventQueue)
 
     /// Queries the current DPI awareness level from Windows
     private static func queryDpiAwarenessLevel() -> DpiAwarenessLevel {
@@ -288,7 +277,7 @@ struct WinApplication: LuminaApp {
 }
 
 // MARK: - Sendable Conformance
-
-extension WinApplication: @unchecked Sendable {}
+// @MainActor types automatically conform to Sendable via actor isolation
+// No need for explicit @unchecked Sendable conformance
 
 #endif

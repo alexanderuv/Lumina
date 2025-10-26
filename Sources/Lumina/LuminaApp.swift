@@ -2,7 +2,7 @@
 ///
 /// This is used internally by the platform layer to notify the Application
 /// when a window has been closed, allowing it to clean up the window registry.
-internal typealias WindowCloseCallback = @MainActor (WindowID) -> Void
+internal typealias WindowCloseCallback = @MainActor @Sendable (WindowID) -> Void
 
 /// Protocol for Lumina applications.
 ///
@@ -132,49 +132,20 @@ public protocol LuminaApp: Sendable, ~Copyable {
     /// - Throws: `LuminaError.eventLoopFailed` if event processing fails
     mutating func pumpEvents(mode: ControlFlowMode) -> Event?
 
-    /// Query monitor capabilities for the current platform.
+    /// Post a user-defined event to the event queue.
     ///
-    /// Returns information about which monitor-related features are supported,
-    /// such as dynamic refresh rates (ProMotion) or fractional DPI scaling.
+    /// Posts a custom event to the main event loop. The event will be
+    /// delivered during the next event loop iteration in FIFO order.
     ///
-    /// Example:
+    /// Background threads must use `await` to call this method:
     /// ```swift
-    /// let caps = LuminaApp.monitorCapabilities()
-    /// if caps.supportsDynamicRefreshRate {
-    ///     print("Platform supports variable refresh rate")
+    /// Task {
+    ///     await app.postUserEvent(.custom("data"))
     /// }
     /// ```
-    ///
-    /// - Returns: MonitorCapabilities struct describing platform support
-    static func monitorCapabilities() -> MonitorCapabilities
-
-    /// Query clipboard capabilities for the current platform.
-    ///
-    /// Returns information about which clipboard data types are supported
-    /// on this platform (text, images, HTML, etc.).
-    ///
-    /// Example:
-    /// ```swift
-    /// let caps = LuminaApp.clipboardCapabilities()
-    /// if caps.supportsText {
-    ///     try Clipboard.writeText("Hello!")
-    /// }
-    /// ```
-    ///
-    /// - Returns: ClipboardCapabilities struct describing platform support
-    static func clipboardCapabilities() -> ClipboardCapabilities
-
-    /// Post a user-defined event to the event queue (thread-safe).
-    ///
-    /// This method is thread-safe and allows background threads to communicate
-    /// with the main event loop by posting custom events. The event will be
-    /// delivered during the next event loop iteration.
-    ///
-    /// Thread Safety: This is the ONLY method that's safe to call from
-    /// background threads.
     ///
     /// - Parameter event: The user event to post
-    nonisolated func postUserEvent(_ event: UserEvent)
+    func postUserEvent(_ event: UserEvent)
 
     /// Request event loop termination.
     ///

@@ -17,18 +17,23 @@ import WinSDK
 ///   - msg: The Windows message ID
 ///   - wParam: First message parameter
 ///   - lParam: Second message parameter
+///   - hwnd: The window handle
 ///   - windowID: The WindowID associated with this event
 /// - Returns: Lumina Event, or nil if the event should be ignored
 internal func translateWindowsMessage(
     msg: UINT,
     wParam: WPARAM,
     lParam: LPARAM,
+    hwnd: HWND,
     for windowID: WindowID
 ) -> Event? {
     // Switch on message type
     switch msg {
     case UINT(WM_MOUSEMOVE):
-        return translateMouseMove(wParam, lParam, windowID)
+        return translateMouseMove(wParam, lParam, hwnd, windowID)
+
+    case UINT(WM_MOUSELEAVE):
+        return translateMouseLeave(hwnd, windowID)
 
     case UINT(WM_LBUTTONDOWN):
         return translateMouseDown(.left, wParam, lParam, windowID)
@@ -46,7 +51,10 @@ internal func translateWindowsMessage(
         return translateMouseUp(.middle, wParam, lParam, windowID)
 
     case UINT(WM_MOUSEWHEEL):
-        return translateMouseWheel(wParam, lParam, windowID)
+        return translateMouseWheel(wParam, lParam, windowID, isHorizontal: false)
+
+    case UINT(WM_MOUSEHWHEEL):
+        return translateMouseWheel(wParam, lParam, windowID, isHorizontal: true)
 
     case UINT(WM_KEYDOWN), UINT(WM_SYSKEYDOWN):
         return translateKeyDown(wParam, lParam, windowID)
@@ -81,10 +89,39 @@ internal func translateWindowsMessage(
 private func translateMouseMove(
     _ wParam: WPARAM,
     _ lParam: LPARAM,
+    _ hwnd: HWND,
     _ windowID: WindowID
 ) -> Event? {
     let position = extractMousePosition(lParam)
+
+    // Check if we need to start tracking mouse leave
+    let wasInWindow = WinWindowRegistry.shared.isMouseInWindow(for: hwnd)
+
+    if !wasInWindow {
+        // Mouse just entered - start tracking and synthesize enter event
+        var tme = TRACKMOUSEEVENT()
+        tme.cbSize = DWORD(MemoryLayout<TRACKMOUSEEVENT>.size)
+        tme.dwFlags = DWORD(TME_LEAVE)
+        tme.hwndTrack = hwnd
+        tme.dwHoverTime = 0  // Not used for TME_LEAVE
+
+        _ = TrackMouseEvent(&tme)
+        WinWindowRegistry.shared.setMouseInWindow(true, for: hwnd)
+
+        // Return enter event instead of move event
+        return .pointer(.entered(windowID, position: position))
+    }
+
     return .pointer(.moved(windowID, position: position))
+}
+
+private func translateMouseLeave(_ hwnd: HWND, _ windowID: WindowID) -> Event? {
+    // Mark tracking as inactive
+    WinWindowRegistry.shared.setMouseInWindow(false, for: hwnd)
+
+    // Windows doesn't provide position for WM_MOUSELEAVE, use (0,0)
+    // Note: This matches behavior of other platforms where leave position may not be accurate
+    return .pointer(.left(windowID, position: LogicalPosition(x: 0, y: 0)))
 }
 
 private func translateMouseDown(
@@ -94,7 +131,8 @@ private func translateMouseDown(
     _ windowID: WindowID
 ) -> Event? {
     let position = extractMousePosition(lParam)
-    return .pointer(.buttonPressed(windowID, button: button, position: position))
+    let modifiers = translateModifiers()
+    return .pointer(.buttonPressed(windowID, button: button, position: position, modifiers: modifiers))
 }
 
 private func translateMouseUp(
@@ -104,19 +142,30 @@ private func translateMouseUp(
     _ windowID: WindowID
 ) -> Event? {
     let position = extractMousePosition(lParam)
-    return .pointer(.buttonReleased(windowID, button: button, position: position))
+    let modifiers = translateModifiers()
+    return .pointer(.buttonReleased(windowID, button: button, position: position, modifiers: modifiers))
 }
 
 private func translateMouseWheel(
     _ wParam: WPARAM,
     _ lParam: LPARAM,
-    _ windowID: WindowID
+    _ windowID: WindowID,
+    isHorizontal: Bool
 ) -> Event? {
-    // Extract wheel delta (high word of wParam)
-    let delta = Int16(HIWORD(DWORD(wParam)))
-    let deltaY = -Float(delta) / 120.0  // Windows reports in multiples of 120, negate for Lumina convention
+    // Extract wheel delta (high word of wParam) as signed value
+    // Windows stores this as a signed SHORT, but HIWORD returns unsigned WORD
+    // Use bitPattern initializer to reinterpret the bits as signed
+    let highWord = HIWORD(DWORD(wParam))
+    let delta = Int16(bitPattern: highWord)
+    let normalizedDelta = Float(delta) / 120.0  // Windows reports in multiples of 120
 
-    return .pointer(.wheel(windowID, deltaX: 0, deltaY: deltaY))
+    if isHorizontal {
+        // Horizontal scroll (WM_MOUSEHWHEEL)
+        return .pointer(.wheel(windowID, deltaX: normalizedDelta, deltaY: 0))
+    } else {
+        // Vertical scroll (WM_MOUSEWHEEL) - negate for Lumina convention
+        return .pointer(.wheel(windowID, deltaX: 0, deltaY: -normalizedDelta))
+    }
 }
 
 // MARK: - Keyboard Event Translation

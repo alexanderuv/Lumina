@@ -440,26 +440,6 @@ final class X11Application: LuminaApp {
         }
     }
 
-    static func monitorCapabilities() -> MonitorCapabilities {
-        // X11 capabilities
-        let logger = LuminaLogger(label: "lumina.x11", level: .debug)
-        logger.debug("Monitor capabilities: dynamic refresh rate = false, fractional scaling = true (Xft.dpi)")
-        return MonitorCapabilities(
-            supportsDynamicRefreshRate: false,  // Not standard in X11
-            supportsFractionalScaling: true     // Via Xft.dpi
-        )
-    }
-
-    static func clipboardCapabilities() -> ClipboardCapabilities {
-        let logger = LuminaLogger(label: "lumina.x11", level: .debug)
-        logger.debug("Clipboard capabilities: text = true, images = false, HTML = false")
-        return ClipboardCapabilities(
-            supportsText: true,
-            supportsImages: false,  // Not implemented in M1
-            supportsHTML: false     // Not implemented in M1
-        )
-    }
-
     nonisolated func postUserEvent(_ event: UserEvent) {
         eventQueue.append(.user(event))
         // TODO: Wake up event loop if blocked (requires pipe or similar mechanism)

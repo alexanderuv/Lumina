@@ -87,11 +87,24 @@ internal struct WinMonitor {
             // Generate a unique ID based on monitor handle
             let monitorID = MonitorID(UInt64(bitPattern: Int64(Int(bitPattern: hMonitor))))
 
+            // Extract work area (screen minus taskbar)
+            let rcWork = monitorInfo.rcWork
+            let workAreaPhysicalPos = PhysicalPosition(x: Int(rcWork.left), y: Int(rcWork.top))
+            let workAreaPhysicalSize = PhysicalSize(
+                width: Int(rcWork.right - rcWork.left),
+                height: Int(rcWork.bottom - rcWork.top)
+            )
+            let workAreaLogical = LogicalRect(
+                origin: workAreaPhysicalPos.toLogical(scaleFactor: scaleFactor),
+                size: workAreaPhysicalSize.toLogical(scaleFactor: scaleFactor)
+            )
+
             let monitor = Monitor(
                 id: monitorID,
                 name: deviceName.isEmpty ? "Unknown Monitor" : deviceName,
                 position: logicalPosition,
                 size: logicalSize,
+                workArea: workAreaLogical,
                 scaleFactor: scaleFactor,
                 isPrimary: isPrimary
             )

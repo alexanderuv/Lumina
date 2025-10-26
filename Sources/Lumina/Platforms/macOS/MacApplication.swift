@@ -366,28 +366,6 @@ public final class MacApplication: LuminaApp {
         }
     }
 
-    public static func monitorCapabilities() -> MonitorCapabilities {
-        // macOS supports ProMotion (dynamic refresh rate) on newer MacBook Pros
-        // and Studio Display. Also supports fractional scaling through Retina modes.
-        let logger = LuminaLogger(label: "lumina.macos", level: .debug)
-        logger.debug("Monitor capabilities: dynamic refresh rate = true (ProMotion), fractional scaling = true (Retina)")
-        return MonitorCapabilities(
-            supportsDynamicRefreshRate: true,  // ProMotion on supported hardware
-            supportsFractionalScaling: true     // Retina scaling modes
-        )
-    }
-
-    public static func clipboardCapabilities() -> ClipboardCapabilities {
-        // macOS supports text clipboard via NSPasteboard
-        // Images and HTML support is future work
-        let logger = LuminaLogger(label: "lumina.macos", level: .debug)
-        logger.debug("Clipboard capabilities: text = true, images = false, HTML = false")
-        return ClipboardCapabilities(
-            supportsText: true,
-            supportsImages: false,
-            supportsHTML: false
-        )
-    }
 
     public func postUserEvent(_ event: UserEvent) {
         // Thread-safe enqueue to unified event queue

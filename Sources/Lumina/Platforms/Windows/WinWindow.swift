@@ -2,34 +2,8 @@
 import WinSDK
 import Foundation
 
-/// Global event queue for posting events from WndProc to the application.
-///
-/// Since WndProc is a static C callback, we need a global queue to communicate
-/// events back to the application's poll() method.
-internal final class GlobalEventQueue: @unchecked Sendable {
-    static let shared = GlobalEventQueue()
-
-    private let lock = NSLock()
-    private var events: [Event] = []
-
-    func append(_ event: Event) {
-        lock.lock()
-        defer { lock.unlock() }
-        events.append(event)
-    }
-
-    func removeFirst() -> Event? {
-        lock.lock()
-        defer { lock.unlock() }
-        guard !events.isEmpty else { return nil }
-        return events.removeFirst()
-    }
-}
-
 /// Global window registry for HWND -> WindowID mapping.
-///
-/// Windows requires a static C callback for WndProc, but we need to associate
-/// each HWND with its Lumina WindowID. This registry provides that mapping.
+/// Required because WndProc is a static C callback.
 internal final class WinWindowRegistry: @unchecked Sendable {
     static let shared = WinWindowRegistry()
 
@@ -37,6 +11,7 @@ internal final class WinWindowRegistry: @unchecked Sendable {
     private var registry: [HWND: WindowID] = [:]
     private var constraints: [HWND: WindowConstraints] = [:]
     private var closeCallbacks: [HWND: WindowCloseCallback] = [:]
+    private var mouseInWindow: [HWND: Bool] = [:]  // Track if TrackMouseEvent is active
 
     struct WindowConstraints {
         var minSize: LogicalSize?
@@ -54,30 +29,26 @@ internal final class WinWindowRegistry: @unchecked Sendable {
     }
 
     func unregister(hwnd: HWND) {
-        lock.lock()
-        defer { lock.unlock() }
+        // Extract data while holding lock
+        let callback: WindowCloseCallback?
+        let windowID: WindowID?
 
-        // Get the callback and windowID before removing
-        let callback = closeCallbacks[hwnd]
-        let windowID = registry[hwnd]
+        lock.lock()
+        callback = closeCallbacks[hwnd]
+        windowID = registry[hwnd]
 
         registry.removeValue(forKey: hwnd)
         constraints.removeValue(forKey: hwnd)
         closeCallbacks.removeValue(forKey: hwnd)
-
-        // Release the lock before invoking the callback
+        mouseInWindow.removeValue(forKey: hwnd)
         lock.unlock()
 
-        // Invoke the close callback if it exists
-        // WndProc runs on the main thread, so we can use assumeIsolated
+        // Invoke callback outside lock, synchronously (WndProc runs on main thread)
         if let callback = callback, let windowID = windowID {
             MainActor.assumeIsolated {
                 callback(windowID)
             }
         }
-
-        // Re-acquire the lock for the defer block
-        lock.lock()
     }
 
     func windowID(for hwnd: HWND) -> WindowID? {
@@ -109,40 +80,45 @@ internal final class WinWindowRegistry: @unchecked Sendable {
         defer { lock.unlock() }
         return registry.count
     }
+
+    func isMouseInWindow(for hwnd: HWND) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return mouseInWindow[hwnd] ?? false
+    }
+
+    func setMouseInWindow(_ inWindow: Bool, for hwnd: HWND) {
+        lock.lock()
+        defer { lock.unlock() }
+        mouseInWindow[hwnd] = inWindow
+    }
 }
 
 /// Windows window class name
 private let LUMINA_WINDOW_CLASS = "LuminaWindow"
 
-/// Register the window class (called once at startup)
 private func registerWindowClass() -> Bool {
-    // Keep the class name string in scope during registration
     return LUMINA_WINDOW_CLASS.withCString(encodedAs: UTF16.self) { classNamePtr in
         var wc = WNDCLASSEXW()
         wc.cbSize = DWORD(MemoryLayout<WNDCLASSEXW>.size)
-        // CS_HREDRAW | CS_VREDRAW: Redraw entire window when resized horizontally or vertically
-        // CS_DBLCLKS: Enable double-click events
         wc.style = UINT(CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS)
         wc.lpfnWndProc = luminaWndProc
         wc.cbClsExtra = 0
         wc.cbWndExtra = 0
         wc.hInstance = GetModuleHandleW(nil)
         wc.hIcon = nil
-        wc.hCursor = LoadCursorW(nil, UnsafePointer<WCHAR>(bitPattern: 32512)) // IDC_ARROW = 32512
+        wc.hCursor = LoadCursorW(nil, UnsafePointer<WCHAR>(bitPattern: 0x7F00))  // IDC_ARROW
         wc.hbrBackground = nil
         wc.lpszMenuName = nil
-        wc.lpszClassName = classNamePtr  // Pointer valid within this closure
+        wc.lpszClassName = classNamePtr
         wc.hIconSm = nil
 
         return RegisterClassExW(&wc) != 0
     }
 }
 
-/// Static flag to ensure we only register the window class once
 @MainActor
 private var windowClassRegistered = false
-
-/// Window procedure callback (static C function required by Win32)
 private func luminaWndProc(
     _ hwnd: HWND?,
     _ uMsg: UINT,
@@ -153,23 +129,19 @@ private func luminaWndProc(
         return DefWindowProcW(nil, uMsg, wParam, lParam)
     }
 
-    // Handle special messages
     switch uMsg {
     case UINT(WM_NCCREATE):
-        // Enable non-client DPI scaling before DefWindowProc processes WM_NCCREATE
-        // This must be called during WM_NCCREATE to take effect
+        // Enable non-client DPI scaling (must be called during WM_NCCREATE)
         _ = EnableNonClientDpiScaling(hwnd)
         return DefWindowProcW(hwnd, uMsg, wParam, lParam)
 
     case UINT(WM_DESTROY):
         WinWindowRegistry.shared.unregister(hwnd: hwnd)
-        // Note: Don't call PostQuitMessage here - let the close callback decide
-        // whether to quit based on exitOnLastWindowClosed setting
+        // Don't call PostQuitMessage - let close callback decide based on exitOnLastWindowClosed
         return 0
 
     case UINT(WM_CLOSE):
-        // Don't destroy automatically - let Lumina handle it
-        // Just translate to a close event
+        // User requested close - destroy window, which triggers WM_DESTROY and close callback
         DestroyWindow(hwnd)
         return 0
 
@@ -216,9 +188,12 @@ private func luminaWndProc(
 
         // Still translate the event for application notification
         if let windowID = WinWindowRegistry.shared.windowID(for: hwnd) {
-            if let event = translateWindowsMessage(msg: uMsg, wParam: wParam, lParam: lParam, for: windowID) {
-                // Post event to global queue for poll() to retrieve
-                GlobalEventQueue.shared.append(event)
+            if let event = translateWindowsMessage(msg: uMsg, wParam: wParam, lParam: lParam, hwnd: hwnd, for: windowID) {
+                // Post event to app's event queue
+                // WndProc runs on main thread, so we can safely access MainActor-isolated state synchronously
+                MainActor.assumeIsolated {
+                    WinPlatform.shared?.app?.eventQueue.append(event)
+                }
             }
         }
         return 0
@@ -250,9 +225,12 @@ private func luminaWndProc(
     default:
         // Translate other events through WinInput
         if let windowID = WinWindowRegistry.shared.windowID(for: hwnd) {
-            if let event = translateWindowsMessage(msg: uMsg, wParam: wParam, lParam: lParam, for: windowID) {
-                // Post event to global queue for poll() to retrieve
-                GlobalEventQueue.shared.append(event)
+            if let event = translateWindowsMessage(msg: uMsg, wParam: wParam, lParam: lParam, hwnd: hwnd, for: windowID) {
+                // Post event to app's event queue
+                // WndProc runs on main thread, so we can safely access MainActor-isolated state synchronously
+                MainActor.assumeIsolated {
+                    WinPlatform.shared?.app?.eventQueue.append(event)
+                }
             }
         }
     }
@@ -266,9 +244,15 @@ private func luminaWndProc(
 /// Lumina's cross-platform window interface. It handles DPI scaling,
 /// window styles, and Win32 API calls.
 @MainActor
-internal struct WinWindow: LuminaWindow {
-    let id: WindowID
+public final class WinWindow: LuminaWindow {
+    public let id: WindowID
     private var hwnd: HWND?
+
+    /// Private initializer - use create() instead
+    private init(id: WindowID, hwnd: HWND) {
+        self.id = id
+        self.hwnd = hwnd
+    }
 
     /// Create a new Windows window.
     ///
@@ -426,7 +410,7 @@ internal struct WinWindow: LuminaWindow {
         return WinWindow(id: windowID, hwnd: validHwnd)
     }
 
-    mutating func show() {
+    public func show() {
         guard let hwnd = hwnd else { return }
         ShowWindow(hwnd, SW_SHOW)
         UpdateWindow(hwnd)
@@ -449,24 +433,24 @@ internal struct WinWindow: LuminaWindow {
         )
     }
 
-    mutating func hide() {
+    public func hide() {
         guard let hwnd = hwnd else { return }
         ShowWindow(hwnd, SW_HIDE)
     }
 
-    consuming func close() {
+    public func close() {
         guard let hwnd = hwnd else { return }
         DestroyWindow(hwnd)
     }
 
-    mutating func setTitle(_ title: borrowing String) {
+    public func setTitle(_ title: borrowing String) {
         guard let hwnd = hwnd else { return }
         _ = title.withCString(encodedAs: UTF16.self) { titlePtr in
             SetWindowTextW(hwnd, titlePtr)
         }
     }
 
-    borrowing func size() -> LogicalSize {
+    public func size() -> LogicalSize {
         guard let hwnd = hwnd else { return LogicalSize(width: 0, height: 0) }
 
         var rect = RECT()
@@ -478,7 +462,7 @@ internal struct WinWindow: LuminaWindow {
         ).toLogical(scaleFactor: scaleFactor)
     }
 
-    mutating func resize(_ size: borrowing LogicalSize) {
+    public func resize(_ size: borrowing LogicalSize) {
         guard let hwnd = hwnd else { return }
 
         let currentScaleFactor = scaleFactor()
@@ -508,7 +492,7 @@ internal struct WinWindow: LuminaWindow {
         )
     }
 
-    borrowing func position() -> LogicalPosition {
+    public func position() -> LogicalPosition {
         guard let hwnd = hwnd else { return LogicalPosition(x: 0, y: 0) }
 
         var rect = RECT()
@@ -520,7 +504,7 @@ internal struct WinWindow: LuminaWindow {
         ).toLogical(scaleFactor: scaleFactor)
     }
 
-    mutating func moveTo(_ position: borrowing LogicalPosition) {
+    public func moveTo(_ position: borrowing LogicalPosition) {
         guard let hwnd = hwnd else { return }
 
         let physical = position.toPhysical(scaleFactor: scaleFactor())
@@ -534,31 +518,142 @@ internal struct WinWindow: LuminaWindow {
         )
     }
 
-    mutating func setMinSize(_ size: borrowing LogicalSize?) {
+    public func setMinSize(_ size: borrowing LogicalSize?) {
         guard let hwnd = hwnd else { return }
         WinWindowRegistry.shared.setMinSize(size, for: hwnd)
     }
 
-    mutating func setMaxSize(_ size: borrowing LogicalSize?) {
+    public func setMaxSize(_ size: borrowing LogicalSize?) {
         guard let hwnd = hwnd else { return }
         WinWindowRegistry.shared.setMaxSize(size, for: hwnd)
     }
 
-    mutating func requestFocus() {
+    public func requestFocus() {
         guard let hwnd = hwnd else { return }
         SetForegroundWindow(hwnd)
         SetFocus(hwnd)
     }
 
-    borrowing func scaleFactor() -> Float {
+    public func scaleFactor() -> Float {
         guard let hwnd = hwnd else { return 1.0 }
         let dpi = GetDpiForWindow(hwnd)
         return Float(dpi) / 96.0
     }
+
+    public func requestRedraw() {
+        guard let hwnd = hwnd else { return }
+        // Invalidate the client area to trigger a WM_PAINT message
+        InvalidateRect(hwnd, nil, true)
+    }
+
+    public func setDecorated(_ decorated: Bool) throws {
+        guard let hwnd = hwnd else { return }
+
+        let newStyle: DWORD
+
+        if decorated {
+            // Add decorations
+            newStyle = DWORD(WS_OVERLAPPEDWINDOW)
+        } else {
+            // Remove decorations (borderless popup)
+            // WS_POPUP = 0x80000000, WS_VISIBLE = 0x10000000
+            newStyle = 0x80000000 | 0x10000000
+        }
+
+        SetWindowLongPtrW(hwnd, GWL_STYLE, LONG_PTR(newStyle))
+        SetWindowPos(hwnd, nil, 0, 0, 0, 0, UINT(SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE))
+    }
+
+    public func setAlwaysOnTop(_ alwaysOnTop: Bool) throws {
+        guard let hwnd = hwnd else { return }
+
+        // HWND_TOPMOST = (HWND)-1, HWND_NOTOPMOST = (HWND)-2
+        let hWndInsertAfter: HWND? = alwaysOnTop ?
+            HWND(bitPattern: -1) :
+            HWND(bitPattern: -2)
+        SetWindowPos(hwnd, hWndInsertAfter, 0, 0, 0, 0, UINT(SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE))
+    }
+
+    public func setTransparent(_ transparent: Bool) throws {
+        guard let hwnd = hwnd else { return }
+
+        let currentExStyle = DWORD(GetWindowLongPtrW(hwnd, GWL_EXSTYLE))
+        let newExStyle: DWORD
+
+        if transparent {
+            // Enable layered window for transparency
+            newExStyle = currentExStyle | DWORD(WS_EX_LAYERED)
+        } else {
+            // Remove layered window style
+            newExStyle = currentExStyle & ~DWORD(WS_EX_LAYERED)
+        }
+
+        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, LONG_PTR(newExStyle))
+
+        if transparent {
+            // Set alpha to fully opaque by default, allow rendering to control alpha
+            SetLayeredWindowAttributes(hwnd, 0, 255, DWORD(LWA_ALPHA))
+        }
+    }
+
+    public func capabilities() -> WindowCapabilities {
+        // Windows supports all Wave B features
+        return WindowCapabilities(
+            supportsTransparency: true,
+            supportsAlwaysOnTop: true,
+            supportsDecorationToggle: true,
+            supportsClientSideDecorations: false  // Windows uses system decorations
+        )
+    }
+
+    public func currentMonitor() throws -> Monitor {
+        guard let hwnd = hwnd else {
+            throw LuminaError.monitorEnumerationFailed(reason: "Window handle is nil")
+        }
+
+        // Get the monitor that contains the majority of the window
+        let hMonitor = MonitorFromWindow(hwnd, DWORD(MONITOR_DEFAULTTONEAREST))
+        guard hMonitor != nil else {
+            throw LuminaError.monitorEnumerationFailed(reason: "MonitorFromWindow returned nil")
+        }
+
+        // Enumerate all monitors and find the one matching this hMonitor
+        let monitors = try WinMonitor.enumerateMonitors()
+
+        // Since we can't directly match hMonitor handles, we'll use the window's position
+        // to find the closest monitor
+        let windowPos = position()
+        let windowSize = size()
+        let windowCenter = LogicalPosition(
+            x: windowPos.x + windowSize.width / 2,
+            y: windowPos.y + windowSize.height / 2
+        )
+
+        // Find the monitor that contains the window center
+        for monitor in monitors {
+            let monRight = monitor.position.x + Float(monitor.size.width)
+            let monBottom = monitor.position.y + Float(monitor.size.height)
+
+            if windowCenter.x >= monitor.position.x && windowCenter.x < monRight &&
+               windowCenter.y >= monitor.position.y && windowCenter.y < monBottom {
+                return monitor
+            }
+        }
+
+        // Fallback to first monitor if not found
+        guard let firstMonitor = monitors.first else {
+            throw LuminaError.monitorEnumerationFailed(reason: "No monitors available")
+        }
+        return firstMonitor
+    }
+
+    public func cursor() -> any LuminaCursor {
+        return WinCursor()
+    }
 }
 
 // MARK: - Sendable Conformance
-
-extension WinWindow: @unchecked Sendable {}
+// @MainActor types automatically conform to Sendable via actor isolation
+// No need for explicit @unchecked Sendable conformance
 
 #endif
